@@ -12,13 +12,14 @@
     <nav>
       <span id="nav-guest">
         <a href="/login.html">Login</a>
-        <a href="/register.html" class="btn btn-small">Registrieren</a>
+        <a href="/einladung.html" class="btn btn-small btn-secondary">Einladungscode</a>
       </span>
       <span id="nav-user" class="hidden" style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
         <span class="nav-user" id="nav-username"></span>
         <a href="/dashboard.html" class="btn btn-small">Dashboard</a>
         <a href="/chat.html" class="btn btn-small btn-secondary">Chat</a>
         <a href="/settings.html" class="btn btn-small btn-secondary">Einstellungen</a>
+        <a href="/admin.html" id="nav-admin" class="btn btn-small hidden">Admin</a>
         <form class="inline-form" action="/logout" method="post">
           <button type="submit" class="btn btn-ghost">Logout</button>
         </form>
@@ -30,14 +31,16 @@
     <ul id="flash-banner"></ul>
     <section class="hero">
       <h1>Willkommen</h1>
-      <p class="lead">Normale Webseiten (HTML) mit Login und Registrierung. Auf dem Raspberry Pi im Browser öffnen.</p>
+      <p class="lead">Login mit bestehendem Konto — oder mit <strong>Einladungscode</strong> vom Admin. Auf dem Raspberry Pi im Browser öffnen.</p>
+      <p class="muted hidden" id="setup-hint">Noch keine Nutzer? <a href="/setup.html">Ersten Administrator anlegen</a></p>
       <div class="actions">
-        <a class="btn" href="/register.html">Konto erstellen</a>
-        <a class="btn btn-secondary" href="/login.html">Einloggen</a>
+        <a class="btn" href="/login.html">Einloggen</a>
+        <a class="btn btn-secondary" href="/einladung.html">Mit Code registrieren</a>
       </div>
     </section>
   </main>
   <script src="/js/flash.js"></script>
   <script src="/js/nav.js"></script>
+  <script src="/js/setup-hint.js"></script>
 </body>
 </html>

@@ -11,8 +11,14 @@
     taken: "Dieser Benutzername ist schon vergeben.",
     logout: "Du bist ausgeloggt.",
     needlogin: "Bitte zuerst einloggen.",
-    levels: "Bitte für jedes Fach Pro oder Noob wählen.",
+    levels: "Bitte für jedes Fach Pro, Mittel oder Noob wählen.",
     saved: "Einstellungen gespeichert.",
+    register_disabled: "Öffentliche Registrierung ist ausgeschaltet. Bitte Administrator oder Einladungscode.",
+    admin_only: "Nur für Administratoren.",
+    user_created: "Nutzer wurde angelegt.",
+    setup_done: "Admin-Konto erstellt. Du bist eingeloggt.",
+    bad_invite: "Ungültiger oder bereits benutzter Code.",
+    redeem_ok: "Konto erstellt. Willkommen!",
   };
 
   var text = messages[code];
@@ -23,9 +29,9 @@
 
   var li = document.createElement("li");
   var cls =
-    code === "saved"
+    code === "saved" || code === "user_created" || code === "setup_done" || code === "redeem_ok"
       ? "flash-success"
-      : code === "logout"
+      : code === "logout" || code === "register_disabled"
         ? "flash-info"
         : code === "needlogin"
           ? "flash-warning"

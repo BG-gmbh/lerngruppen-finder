@@ -12,12 +12,14 @@
     <nav>
       <span id="nav-guest" class="hidden">
         <a href="/login.html">Login</a>
-        <a href="/register.html" class="btn btn-small">Registrieren</a>
+        <a href="/einladung.html" class="btn btn-small btn-secondary">Einladungscode</a>
       </span>
       <span id="nav-user" style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
         <span class="nav-user" id="nav-username"></span>
+        <a href="/dashboard.html" class="btn btn-small">Dashboard</a>
         <a href="/chat.html" class="btn btn-small btn-secondary">Chat</a>
         <a href="/settings.html" class="btn btn-small btn-secondary">Einstellungen</a>
+        <a href="/admin.html" id="nav-admin" class="btn btn-small hidden">Admin</a>
         <form class="inline-form" action="/logout" method="post">
           <button type="submit" class="btn btn-ghost">Logout</button>
         </form>
@@ -43,7 +45,9 @@
   <script src="/js/flash.js"></script>
   <script>
     function labelLevel(v) {
-      return v === "pro" ? "Pro" : "Noob";
+      if (v === "pro") return "Pro";
+      if (v === "medium") return "Mittel";
+      return "Noob";
     }
 
     function setSummary(data) {
@@ -71,6 +75,10 @@
         document.getElementById("welcome-name").textContent = data.username;
         var navName = document.getElementById("nav-username");
         if (navName) navName.textContent = data.username;
+        if (data.role === "admin") {
+          var adm = document.getElementById("nav-admin");
+          if (adm) adm.classList.remove("hidden");
+        }
         setSummary(data);
       });
   </script>

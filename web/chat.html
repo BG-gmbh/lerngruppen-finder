@@ -12,13 +12,14 @@
     <nav>
       <span id="nav-guest" class="hidden">
         <a href="/login.html">Login</a>
-        <a href="/register.html" class="btn btn-small">Registrieren</a>
+        <a href="/einladung.html" class="btn btn-small btn-secondary">Einladungscode</a>
       </span>
       <span id="nav-user" style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
         <span class="nav-user" id="nav-username"></span>
         <a href="/dashboard.html" class="btn btn-small">Dashboard</a>
         <a href="/settings.html" class="btn btn-small btn-secondary">Einstellungen</a>
         <a href="/chat.html" class="btn btn-small btn-secondary">Chat</a>
+        <a href="/admin.html" id="nav-admin" class="btn btn-small hidden">Admin</a>
         <form class="inline-form" action="/logout" method="post">
           <button type="submit" class="btn btn-ghost">Logout</button>
         </form>
@@ -30,8 +31,8 @@
     <section class="card" id="lobby">
       <h1>Fächer-Chat</h1>
       <p class="field-hint">
-        Pro und Noob schreiben im selben Raum je Fach. Maximal <strong id="max-users-label">5</strong> Personen gleichzeitig pro Raum
-        (wer 2 Minuten nichts tut, fliegt raumtechnisch raus und macht Platz).
+        Pro und Noob schreiben im selben Raum je Fach. Maximal <strong id="max-users-label">5</strong> Personen gleichzeitig pro Raum.
+        Platz wird frei, wenn jemand den Raum verlässt.
       </p>
       <div id="room-cards" class="room-cards" aria-live="polite"></div>
       <p class="muted" id="lobby-error" role="alert"></p>

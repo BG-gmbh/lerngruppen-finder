@@ -1,4 +1,5 @@
 import os
+import secrets
 import sqlite3
 from contextlib import closing
 from functools import wraps
@@ -8,7 +9,8 @@ from flask import Flask, g, jsonify, redirect, request, send_from_directory, ses
 from werkzeug.security import check_password_hash, generate_password_hash
 
 DATABASE = os.path.join(os.path.dirname(__file__), "users.db")
-LEVELS = frozenset({"pro", "noob"})
+LEVELS = frozenset({"pro", "medium", "noob"})
+ROLES = frozenset({"admin", "user"})
 CHAT_SUBJECTS = frozenset({"german", "math", "english"})
 CHAT_SUBJECT_LABELS = {"german": "Deutsch", "math": "Mathe", "english": "Englisch"}
 CHAT_LEVEL_COLUMN = {
@@ -76,7 +78,19 @@ def init_db():
         )
         db.commit()
         _ensure_subject_columns(db)
+        _ensure_role_column(db)
         _ensure_chat_tables(db)
+        _ensure_invite_codes(db)
+
+
+def _ensure_role_column(db):
+    cur = db.execute("PRAGMA table_info(users)")
+    names = {row[1] for row in cur.fetchall()}
+    if "role" not in names:
+        db.execute(
+            "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'"
+        )
+    db.commit()
 
 
 def _ensure_chat_tables(db):
@@ -113,14 +127,19 @@ def _ensure_chat_tables(db):
     db.commit()
 
 
-def _prune_stale_chat(db, subject):
+def _ensure_invite_codes(db):
     db.execute(
         """
-        DELETE FROM chat_presence
-        WHERE subject = ? AND last_seen < datetime('now', '-2 minutes')
-        """,
-        (subject,),
+        CREATE TABLE IF NOT EXISTS invite_codes (
+            code TEXT PRIMARY KEY,
+            created_by INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            used_at TEXT,
+            used_user_id INTEGER
+        )
+        """
     )
+    db.commit()
 
 
 def _user_level_for_subject(db, user_id, subject):
@@ -156,6 +175,35 @@ def login_required_api(view):
     return wrapped
 
 
+def admin_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("user_id"):
+            q = urlencode({"flash": "needlogin", "next": request.path})
+            return redirect(f"/login.html?{q}")
+        if session.get("role") != "admin":
+            return redirect("/dashboard.html?flash=admin_only")
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+def admin_api(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("user_id"):
+            return jsonify(error="auth"), 401
+        if session.get("role") != "admin":
+            return jsonify(error="forbidden"), 403
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+def _user_count(db):
+    return int(db.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"])
+
+
 @app.route("/")
 def home():
     if session.get("user_id"):
@@ -181,6 +229,222 @@ def chat_page():
     return send_from_directory(app.static_folder, "chat.html")
 
 
+@app.route("/register.html")
+def register_page_blocked():
+    return redirect("/login.html?flash=register_disabled")
+
+
+@app.route("/setup.html")
+def setup_page():
+    db = get_db()
+    if _user_count(db) > 0:
+        return redirect("/login.html")
+    return send_from_directory(app.static_folder, "setup.html")
+
+
+@app.route("/setup", methods=["POST"])
+def setup_create():
+    db = get_db()
+    if _user_count(db) > 0:
+        return redirect("/login.html?flash=setup_done")
+
+    username = (request.form.get("username") or "").strip()
+    password = request.form.get("password") or ""
+    password2 = request.form.get("password_confirm") or ""
+
+    if not username or len(username) < 3:
+        return redirect("/setup.html?flash=shortuser")
+    if len(password) < 6:
+        return redirect("/setup.html?flash=shortpass")
+    if password != password2:
+        return redirect("/setup.html?flash=mismatch")
+
+    levels = parse_subject_levels(request.form)
+    if levels is None:
+        return redirect("/setup.html?flash=levels")
+
+    lg, lm, le = levels
+    try:
+        db.execute(
+            """
+            INSERT INTO users (username, password_hash, level_german, level_math, level_english, role)
+            VALUES (?, ?, ?, ?, ?, 'admin')
+            """,
+            (username, generate_password_hash(password), lg, lm, le),
+        )
+        db.commit()
+    except sqlite3.IntegrityError:
+        return redirect("/setup.html?flash=taken")
+
+    row = db.execute(
+        "SELECT id FROM users WHERE username = ?", (username,)
+    ).fetchone()
+    session.clear()
+    session["user_id"] = row["id"]
+    session["username"] = username
+    session["role"] = "admin"
+    return redirect("/dashboard.html?flash=setup_done")
+
+
+@app.route("/admin.html")
+@admin_required
+def admin_page():
+    return send_from_directory(app.static_folder, "admin.html")
+
+
+@app.route("/admin/users", methods=["POST"])
+@admin_required
+def admin_create_user():
+    username = (request.form.get("username") or "").strip()
+    password = request.form.get("password") or ""
+    password2 = request.form.get("password_confirm") or ""
+
+    if not username or len(username) < 3:
+        return redirect("/admin.html?flash=shortuser")
+    if len(password) < 6:
+        return redirect("/admin.html?flash=shortpass")
+    if password != password2:
+        return redirect("/admin.html?flash=mismatch")
+
+    levels = parse_subject_levels(request.form)
+    if levels is None:
+        return redirect("/admin.html?flash=levels")
+
+    role = "admin" if request.form.get("is_admin") == "1" else "user"
+    if role not in ROLES:
+        role = "user"
+
+    lg, lm, le = levels
+    db = get_db()
+    try:
+        db.execute(
+            """
+            INSERT INTO users (username, password_hash, level_german, level_math, level_english, role)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (username, generate_password_hash(password), lg, lm, le, role),
+        )
+        db.commit()
+    except sqlite3.IntegrityError:
+        return redirect("/admin.html?flash=taken")
+
+    return redirect("/admin.html?flash=user_created")
+
+
+@app.route("/api/setup-status", methods=["GET"])
+def setup_status():
+    db = get_db()
+    return jsonify(setup_needed=_user_count(db) == 0)
+
+
+@app.route("/einladung.html")
+def invite_page():
+    if session.get("user_id"):
+        return redirect("/dashboard.html")
+    return send_from_directory(app.static_folder, "einladung.html")
+
+
+@app.route("/einladung", methods=["POST"])
+def invite_redeem():
+    if session.get("user_id"):
+        return redirect("/dashboard.html")
+
+    code = (request.form.get("code") or "").strip()
+    username = (request.form.get("username") or "").strip()
+    password = request.form.get("password") or ""
+    password2 = request.form.get("password_confirm") or ""
+
+    if not code:
+        return redirect("/einladung.html?flash=bad_invite")
+    if not username or len(username) < 3:
+        return redirect("/einladung.html?flash=shortuser")
+    if len(password) < 6:
+        return redirect("/einladung.html?flash=shortpass")
+    if password != password2:
+        return redirect("/einladung.html?flash=mismatch")
+
+    db = get_db()
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        inv = db.execute(
+            "SELECT code FROM invite_codes WHERE code = ? AND used_at IS NULL",
+            (code,),
+        ).fetchone()
+        if not inv:
+            db.rollback()
+            return redirect("/einladung.html?flash=bad_invite")
+
+        db.execute(
+            """
+            INSERT INTO users (username, password_hash, level_german, level_math, level_english, role)
+            VALUES (?, ?, 'noob', 'noob', 'noob', 'user')
+            """,
+            (username, generate_password_hash(password)),
+        )
+        new_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        cur = db.execute(
+            """
+            UPDATE invite_codes
+            SET used_at = datetime('now'), used_user_id = ?
+            WHERE code = ? AND used_at IS NULL
+            """,
+            (new_id, code),
+        )
+        if cur.rowcount != 1:
+            db.rollback()
+            return redirect("/einladung.html?flash=bad_invite")
+
+        db.commit()
+    except sqlite3.IntegrityError:
+        db.rollback()
+        return redirect("/einladung.html?flash=taken")
+
+    session.clear()
+    session["user_id"] = new_id
+    session["username"] = username
+    session["role"] = "user"
+    return redirect("/dashboard.html?flash=redeem_ok")
+
+
+@app.route("/api/admin/invite-codes", methods=["GET"])
+@admin_api
+def admin_invite_list():
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT code, created_at
+        FROM invite_codes
+        WHERE used_at IS NULL
+        ORDER BY created_at DESC
+        LIMIT 100
+        """
+    ).fetchall()
+    return jsonify(
+        codes=[{"code": r["code"], "created_at": r["created_at"]} for r in rows]
+    )
+
+
+@app.route("/api/admin/invite-codes", methods=["POST"])
+@admin_api
+def admin_invite_create():
+    db = get_db()
+    uid = session["user_id"]
+    for _ in range(12):
+        code = secrets.token_hex(6)
+        try:
+            db.execute(
+                "INSERT INTO invite_codes (code, created_by) VALUES (?, ?)",
+                (code, uid),
+            )
+            db.commit()
+            return jsonify(code=code, created_by=uid)
+        except sqlite3.IntegrityError:
+            db.rollback()
+            continue
+    return jsonify(error="generate"), 500
+
+
 @app.route("/api/chat/rooms", methods=["GET"])
 @login_required_api
 def chat_rooms():
@@ -188,7 +452,6 @@ def chat_rooms():
     uid = session["user_id"]
     rooms = []
     for sub in ("german", "math", "english"):
-        _prune_stale_chat(db, sub)
         members = db.execute(
             """
             SELECT username, level FROM chat_presence
@@ -232,8 +495,6 @@ def chat_join():
     uid = session["user_id"]
     uname = session["username"]
     lvl = _user_level_for_subject(db, uid, subject)
-
-    _prune_stale_chat(db, subject)
 
     row = db.execute(
         "SELECT 1 FROM chat_presence WHERE subject = ? AND user_id = ?",
@@ -299,14 +560,6 @@ def chat_messages():
 
     db = get_db()
     uid = session["user_id"]
-    in_room = db.execute(
-        "SELECT 1 FROM chat_presence WHERE subject = ? AND user_id = ?",
-        (subject, uid),
-    ).fetchone()
-    if not in_room:
-        return jsonify(error="not_in_room"), 403
-
-    _prune_stale_chat(db, subject)
     in_room = db.execute(
         "SELECT 1 FROM chat_presence WHERE subject = ? AND user_id = ?",
         (subject, uid),
@@ -389,48 +642,7 @@ def chat_send():
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
-    if session.get("user_id"):
-        return redirect("/dashboard.html")
-
-    if request.method == "GET":
-        return redirect("/register.html")
-
-    username = (request.form.get("username") or "").strip()
-    password = request.form.get("password") or ""
-    password2 = request.form.get("password_confirm") or ""
-
-    if not username or len(username) < 3:
-        return redirect("/register.html?flash=shortuser")
-    if len(password) < 6:
-        return redirect("/register.html?flash=shortpass")
-    if password != password2:
-        return redirect("/register.html?flash=mismatch")
-
-    levels = parse_subject_levels(request.form)
-    if levels is None:
-        return redirect("/register.html?flash=levels")
-
-    lg, lm, le = levels
-    db = get_db()
-    try:
-        db.execute(
-            """
-            INSERT INTO users (username, password_hash, level_german, level_math, level_english)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (username, generate_password_hash(password), lg, lm, le),
-        )
-        db.commit()
-    except sqlite3.IntegrityError:
-        return redirect("/register.html?flash=taken")
-
-    row = db.execute(
-        "SELECT id FROM users WHERE username = ?", (username,)
-    ).fetchone()
-    session.clear()
-    session["user_id"] = row["id"]
-    session["username"] = username
-    return redirect("/dashboard.html")
+    return redirect("/login.html?flash=register_disabled")
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -446,7 +658,7 @@ def login():
 
     db = get_db()
     row = db.execute(
-        "SELECT id, password_hash FROM users WHERE username = ?",
+        "SELECT id, password_hash, role FROM users WHERE username = ?",
         (username,),
     ).fetchone()
 
@@ -456,6 +668,8 @@ def login():
     session.clear()
     session["user_id"] = row["id"]
     session["username"] = username
+    r = row["role"] if "role" in row.keys() else None
+    session["role"] = r if r in ROLES else "user"
 
     next_url = (request.form.get("next") or request.args.get("next") or "").strip()
     if next_url.startswith("/") and not next_url.startswith("//"):
@@ -466,7 +680,7 @@ def login():
 @app.route("/logout", methods=["POST"])
 def logout():
     session.clear()
-    return redirect("/?flash=logout")
+    return redirect("/login.html?flash=logout")
 
 
 @app.route("/profile", methods=["POST"])
@@ -495,16 +709,19 @@ def api_me():
     db = get_db()
     row = db.execute(
         """
-        SELECT username, level_german, level_math, level_english
+        SELECT username, role, level_german, level_math, level_english
         FROM users WHERE id = ?
         """,
         (session["user_id"],),
     ).fetchone()
     if row is None:
         return jsonify({}), 401
+    r = row["role"] if "role" in row.keys() else None
+    role = r if r in ROLES else "user"
     return jsonify(
         user_id=session["user_id"],
         username=row["username"],
+        role=role,
         level_german=row["level_german"],
         level_math=row["level_math"],
         level_english=row["level_english"],

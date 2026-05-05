@@ -74,7 +74,9 @@
       ul.className = "room-members";
       room.members.forEach(function (m) {
         var li = document.createElement("li");
-        li.textContent = m.username + " (" + (m.level === "pro" ? "Pro" : "Noob") + ")";
+        var lv =
+          m.level === "pro" ? "Pro" : m.level === "medium" ? "Mittel" : "Noob";
+        li.textContent = m.username + " (" + lv + ")";
         ul.appendChild(li);
       });
       card.appendChild(ul);
@@ -235,6 +237,10 @@
       window.__uid = data.user_id;
       var nav = $("nav-username");
       if (nav) nav.textContent = data.username;
+      if (data.role === "admin") {
+        var adm = $("nav-admin");
+        if (adm) adm.classList.remove("hidden");
+      }
     });
   }
 

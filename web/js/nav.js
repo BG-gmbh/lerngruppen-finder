@@ -13,6 +13,11 @@
       user.classList.remove("hidden");
       var nameEl = document.getElementById("nav-username");
       if (nameEl && data.username) nameEl.textContent = data.username;
+      var adminEl = document.getElementById("nav-admin");
+      if (adminEl) {
+        if (data.role === "admin") adminEl.classList.remove("hidden");
+        else adminEl.classList.add("hidden");
+      }
     })
     .catch(function () {
       user.classList.add("hidden");

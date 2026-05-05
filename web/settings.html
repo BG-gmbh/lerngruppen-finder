@@ -12,13 +12,14 @@
     <nav>
       <span id="nav-guest" class="hidden">
         <a href="/login.html">Login</a>
-        <a href="/register.html" class="btn btn-small">Registrieren</a>
+        <a href="/einladung.html" class="btn btn-small btn-secondary">Einladungscode</a>
       </span>
       <span id="nav-user" style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
         <span class="nav-user" id="nav-username"></span>
         <a href="/dashboard.html" class="btn btn-small">Dashboard</a>
         <a href="/chat.html" class="btn btn-small btn-secondary">Chat</a>
         <a href="/settings.html" class="btn btn-small btn-secondary">Einstellungen</a>
+        <a href="/admin.html" id="nav-admin" class="btn btn-small hidden">Admin</a>
         <form class="inline-form" action="/logout" method="post">
           <button type="submit" class="btn btn-ghost">Logout</button>
         </form>
@@ -30,7 +31,7 @@
     <ul id="flash-banner"></ul>
     <section class="card">
       <h1>Einstellungen</h1>
-      <p class="field-hint">Pro = stark im Fach · Noob = eher Anfänger. Änderungen mit „Speichern“ übernehmen.</p>
+      <p class="field-hint">Pro · Mittel · Noob. Änderungen mit „Speichern“ übernehmen.</p>
 
       <form method="post" action="/profile" class="stack-form">
         <fieldset class="subject-levels subject-levels-plain">
@@ -38,6 +39,7 @@
             <span class="subject-name">Deutsch</span>
             <div class="radio-row">
               <label class="radio-pill"><input type="radio" name="level_german" value="pro" required><span>Pro</span></label>
+              <label class="radio-pill"><input type="radio" name="level_german" value="medium"><span>Mittel</span></label>
               <label class="radio-pill"><input type="radio" name="level_german" value="noob"><span>Noob</span></label>
             </div>
           </div>
@@ -45,6 +47,7 @@
             <span class="subject-name">Mathe</span>
             <div class="radio-row">
               <label class="radio-pill"><input type="radio" name="level_math" value="pro" required><span>Pro</span></label>
+              <label class="radio-pill"><input type="radio" name="level_math" value="medium"><span>Mittel</span></label>
               <label class="radio-pill"><input type="radio" name="level_math" value="noob"><span>Noob</span></label>
             </div>
           </div>
@@ -52,6 +55,7 @@
             <span class="subject-name">Englisch</span>
             <div class="radio-row">
               <label class="radio-pill"><input type="radio" name="level_english" value="pro" required><span>Pro</span></label>
+              <label class="radio-pill"><input type="radio" name="level_english" value="medium"><span>Mittel</span></label>
               <label class="radio-pill"><input type="radio" name="level_english" value="noob"><span>Noob</span></label>
             </div>
           </div>
@@ -88,6 +92,10 @@
       .then(function (data) {
         if (!data || !data.username) return;
         document.getElementById("nav-username").textContent = data.username;
+        if (data.role === "admin") {
+          var adm = document.getElementById("nav-admin");
+          if (adm) adm.classList.remove("hidden");
+        }
         setRadios(data);
       });
   </script>
