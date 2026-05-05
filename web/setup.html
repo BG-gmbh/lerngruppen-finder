@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Erster Administrator — Schul-Tinder</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="logo" href="/">Schul-Tinder</a>
+    <nav><span class="nav-user">Einmal-Setup</span></nav>
+  </header>
+
+  <main class="container container-wide">
+    <ul id="flash-banner"></ul>
+    <section class="card">
+      <h1>Ersten Admin anlegen</h1>
+      <p class="field-hint">Es gibt noch keine Nutzer. Lege hier <strong>einen</strong> Administrator an. Danach nur noch dieser Admin (oder Codes) können weitere Konten erstellen.</p>
+
+      <form method="post" action="/setup" class="stack-form" autocomplete="on">
+        <label>
+          Benutzername (Admin)
+          <input name="username" type="text" required minlength="3" maxlength="64" autocomplete="username">
+        </label>
+        <label>
+          Passwort
+          <input name="password" type="password" required minlength="6" autocomplete="new-password">
+        </label>
+        <label>
+          Passwort bestätigen
+          <input name="password_confirm" type="password" required minlength="6" autocomplete="new-password">
+        </label>
+
+        <fieldset class="subject-levels">
+          <legend>Deine Stärke pro Fach</legend>
+          <p class="field-hint">Pro · Mittel · Noob — später in den Einstellungen änderbar.</p>
+          <div class="subject-row">
+            <span class="subject-name">Deutsch</span>
+            <div class="radio-row">
+              <label class="radio-pill"><input type="radio" name="level_german" value="pro" required><span>Pro</span></label>
+              <label class="radio-pill"><input type="radio" name="level_german" value="medium"><span>Mittel</span></label>
+              <label class="radio-pill"><input type="radio" name="level_german" value="noob"><span>Noob</span></label>
+            </div>
+          </div>
+          <div class="subject-row">
+            <span class="subject-name">Mathe</span>
+            <div class="radio-row">
+              <label class="radio-pill"><input type="radio" name="level_math" value="pro" required><span>Pro</span></label>
+              <label class="radio-pill"><input type="radio" name="level_math" value="medium"><span>Mittel</span></label>
+              <label class="radio-pill"><input type="radio" name="level_math" value="noob"><span>Noob</span></label>
+            </div>
+          </div>
+          <div class="subject-row">
+            <span class="subject-name">Englisch</span>
+            <div class="radio-row">
+              <label class="radio-pill"><input type="radio" name="level_english" value="pro" required><span>Pro</span></label>
+              <label class="radio-pill"><input type="radio" name="level_english" value="medium"><span>Mittel</span></label>
+              <label class="radio-pill"><input type="radio" name="level_english" value="noob"><span>Noob</span></label>
+            </div>
+          </div>
+        </fieldset>
+
+        <button type="submit" class="btn btn-block">Admin-Konto erstellen</button>
+      </form>
+    </section>
+  </main>
+  <script src="/js/flash.js"></script>
+</body>
+</html>

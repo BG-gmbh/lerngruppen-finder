@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin — Schul-Tinder</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="logo" href="/">Schul-Tinder</a>
+    <nav>
+      <span class="nav-user" id="nav-username"></span>
+      <a href="/dashboard.html" class="btn btn-small">Dashboard</a>
+      <a href="/chat.html" class="btn btn-small btn-secondary">Chat</a>
+      <a href="/settings.html" class="btn btn-small btn-secondary">Einstellungen</a>
+      <a href="/admin.html" class="btn btn-small btn-secondary">Admin</a>
+      <form class="inline-form" action="/logout" method="post">
+        <button type="submit" class="btn btn-ghost">Logout</button>
+      </form>
+    </nav>
+  </header>
+
+  <main class="container container-wide">
+    <ul id="flash-banner"></ul>
+    <h1 class="page-title">Administration</h1>
+
+    <div class="tabs" role="tablist">
+      <button type="button" class="tab-btn is-active" role="tab" aria-selected="true" data-tab="accounts">Accounts anlegen</button>
+      <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="codes">Einladungs-Codes</button>
+    </div>
+
+    <section class="card tab-panel is-active" id="tab-accounts" role="tabpanel">
+      <h2 class="card-title">Nutzer manuell anlegen</h2>
+      <p class="field-hint">Passwort wird gehasht gespeichert. Fächer: Pro · Mittel · Noob.</p>
+      <form method="post" action="/admin/users" class="stack-form" autocomplete="off">
+        <label>
+          Benutzername
+          <input name="username" type="text" required minlength="3" maxlength="64" autocomplete="off">
+        </label>
+        <label>
+          Passwort
+          <input name="password" type="password" required minlength="6" autocomplete="new-password">
+        </label>
+        <label>
+          Passwort bestätigen
+          <input name="password_confirm" type="password" required minlength="6" autocomplete="new-password">
+        </label>
+        <label class="check-row">
+          <input type="checkbox" name="is_admin" value="1">
+          <span>Als Administrator anlegen</span>
+        </label>
+
+        <fieldset class="subject-levels subject-levels-plain">
+          <legend>Fach-Level</legend>
+          <div class="subject-row">
+            <span class="subject-name">Deutsch</span>
+            <div class="radio-row">
+              <label class="radio-pill"><input type="radio" name="level_german" value="pro" required><span>Pro</span></label>
+              <label class="radio-pill"><input type="radio" name="level_german" value="medium"><span>Mittel</span></label>
+              <label class="radio-pill"><input type="radio" name="level_german" value="noob"><span>Noob</span></label>
+            </div>
+          </div>
+          <div class="subject-row">
+            <span class="subject-name">Mathe</span>
+            <div class="radio-row">
+              <label class="radio-pill"><input type="radio" name="level_math" value="pro" required><span>Pro</span></label>
+              <label class="radio-pill"><input type="radio" name="level_math" value="medium"><span>Mittel</span></label>
+              <label class="radio-pill"><input type="radio" name="level_math" value="noob"><span>Noob</span></label>
+            </div>
+          </div>
+          <div class="subject-row">
+            <span class="subject-name">Englisch</span>
+            <div class="radio-row">
+              <label class="radio-pill"><input type="radio" name="level_english" value="pro" required><span>Pro</span></label>
+              <label class="radio-pill"><input type="radio" name="level_english" value="medium"><span>Mittel</span></label>
+              <label class="radio-pill"><input type="radio" name="level_english" value="noob"><span>Noob</span></label>
+            </div>
+          </div>
+        </fieldset>
+        <button type="submit" class="btn btn-block">Nutzer speichern</button>
+      </form>
+    </section>
+
+    <section class="card tab-panel hidden" id="tab-codes" role="tabpanel">
+      <h2 class="card-title">Einmal-Codes</h2>
+      <p class="field-hint">Jeder Code funktioniert nur <strong>einmal</strong>. Empfänger trägt ihn unter <a href="/einladung.html">Mit Einladungscode</a> ein und wählt Benutzername und Passwort.</p>
+      <p><button type="button" class="btn" id="btn-new-code">Neuen Code erzeugen</button></p>
+      <p class="muted" id="new-code-out" aria-live="polite"></p>
+      <h3 class="subsection-title">Ungenutzte Codes</h3>
+      <ul id="code-list" class="code-list"></ul>
+    </section>
+  </main>
+
+  <script src="/js/flash.js"></script>
+  <script>
+    (function () {
+      var buttons = document.querySelectorAll(".tab-btn");
+      var panels = { accounts: document.getElementById("tab-accounts"), codes: document.getElementById("tab-codes") };
+
+      buttons.forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var key = btn.getAttribute("data-tab");
+          buttons.forEach(function (b) {
+            b.classList.toggle("is-active", b === btn);
+            b.setAttribute("aria-selected", b === btn ? "true" : "false");
+          });
+          Object.keys(panels).forEach(function (k) {
+            panels[k].classList.toggle("hidden", k !== key);
+            panels[k].classList.toggle("is-active", k === key);
+          });
+        });
+      });
+
+      function loadCodes() {
+        fetch("/api/admin/invite-codes", { credentials: "same-origin" })
+          .then(function (r) {
+            if (r.status === 401 || r.status === 403) return null;
+            return r.json();
+          })
+          .then(function (data) {
+            if (!data || !data.codes) return;
+            var ul = document.getElementById("code-list");
+            ul.innerHTML = "";
+            if (!data.codes.length) {
+              var li = document.createElement("li");
+              li.textContent = "Keine offenen Codes.";
+              li.className = "muted";
+              ul.appendChild(li);
+              return;
+            }
+            data.codes.forEach(function (c) {
+              var li = document.createElement("li");
+              var codeEl = document.createElement("code");
+              codeEl.className = "mono";
+              codeEl.textContent = c.code;
+              var meta = document.createElement("span");
+              meta.className = "muted";
+              meta.textContent = " (" + c.created_at + ")";
+              li.appendChild(codeEl);
+              li.appendChild(meta);
+              ul.appendChild(li);
+            });
+          });
+      }
+
+      document.getElementById("btn-new-code").addEventListener("click", function () {
+        var out = document.getElementById("new-code-out");
+        out.textContent = "";
+        fetch("/api/admin/invite-codes", { method: "POST", credentials: "same-origin" })
+          .then(function (r) {
+            return r.json().then(function (d) {
+              return { ok: r.ok, d: d };
+            });
+          })
+          .then(function (x) {
+            if (!x.ok || !x.d.code) {
+              out.textContent = "Code konnte nicht erzeugt werden.";
+              return;
+            }
+            out.textContent = "Neuer Code (einmal kopieren): " + x.d.code;
+            loadCodes();
+          });
+      });
+
+      fetch("/api/me", { credentials: "same-origin" }).then(function (r) {
+        return r.json();
+      }).then(function (data) {
+        if (data && data.username) {
+          document.getElementById("nav-username").textContent = data.username;
+        }
+      });
+
+      loadCodes();
+    })();
+  </script>
+</body>
+</html>
