@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Login — Schul-Tinder</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="logo" href="/">Schul-Tinder</a>
+    <nav>
+      <span id="nav-guest">
+        <a href="/login.html">Login</a>
+        <a href="/register.html" class="btn btn-small">Registrieren</a>
+      </span>
+      <span id="nav-user" class="hidden" style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+        <span class="nav-user" id="nav-username"></span>
+        <a href="/dashboard.html" class="btn btn-small">Dashboard</a>
+        <a href="/chat.html" class="btn btn-small btn-secondary">Chat</a>
+        <a href="/settings.html" class="btn btn-small btn-secondary">Einstellungen</a>
+        <form class="inline-form" action="/logout" method="post">
+          <button type="submit" class="btn btn-ghost">Logout</button>
+        </form>
+      </span>
+    </nav>
+  </header>
+
+  <main class="container">
+    <ul id="flash-banner"></ul>
+    <section class="card">
+      <h1>Einloggen</h1>
+      <form method="post" action="/login" class="stack-form" autocomplete="on" id="login-form">
+        <label>
+          Benutzername
+          <input name="username" type="text" required autocomplete="username">
+        </label>
+        <label>
+          Passwort
+          <input name="password" type="password" required autocomplete="current-password">
+        </label>
+        <button type="submit" class="btn btn-block">Login</button>
+      </form>
+      <p class="muted">Noch kein Konto? <a href="/register.html">Registrieren</a></p>
+    </section>
+  </main>
+  <script src="/js/flash.js"></script>
+  <script src="/js/nav.js"></script>
+  <script>
+    (function () {
+      var params = new URLSearchParams(window.location.search);
+      var next = params.get("next");
+      var form = document.getElementById("login-form");
+      if (next && form) {
+        var input = document.createElement("input");
+        input.type = "hidden";
+        input.name = "next";
+        input.value = next;
+        form.appendChild(input);
+      }
+    })();
+  </script>
+</body>
+</html>

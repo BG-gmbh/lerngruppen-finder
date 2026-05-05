@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Registrieren — Schul-Tinder</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="logo" href="/">Schul-Tinder</a>
+    <nav>
+      <span id="nav-guest">
+        <a href="/login.html">Login</a>
+        <a href="/register.html" class="btn btn-small">Registrieren</a>
+      </span>
+      <span id="nav-user" class="hidden" style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+        <span class="nav-user" id="nav-username"></span>
+        <a href="/dashboard.html" class="btn btn-small">Dashboard</a>
+        <a href="/chat.html" class="btn btn-small btn-secondary">Chat</a>
+        <a href="/settings.html" class="btn btn-small btn-secondary">Einstellungen</a>
+        <form class="inline-form" action="/logout" method="post">
+          <button type="submit" class="btn btn-ghost">Logout</button>
+        </form>
+      </span>
+    </nav>
+  </header>
+
+  <main class="container">
+    <ul id="flash-banner"></ul>
+    <section class="card">
+      <h1>Konto erstellen</h1>
+      <form method="post" action="/register" class="stack-form" autocomplete="on">
+        <label>
+          Benutzername
+          <input name="username" type="text" required minlength="3" maxlength="64" autocomplete="username">
+        </label>
+        <label>
+          Passwort
+          <input name="password" type="password" required minlength="6" autocomplete="new-password">
+        </label>
+        <label>
+          Passwort bestätigen
+          <input name="password_confirm" type="password" required minlength="6" autocomplete="new-password">
+        </label>
+
+        <fieldset class="subject-levels">
+          <legend>Deine Stärke pro Fach</legend>
+          <p class="field-hint">Pro = sicher im Fach · Noob = eher Anfänger</p>
+
+          <div class="subject-row">
+            <span class="subject-name">Deutsch</span>
+            <div class="radio-row">
+              <label class="radio-pill"><input type="radio" name="level_german" value="pro" required><span>Pro</span></label>
+              <label class="radio-pill"><input type="radio" name="level_german" value="noob"><span>Noob</span></label>
+            </div>
+          </div>
+          <div class="subject-row">
+            <span class="subject-name">Mathe</span>
+            <div class="radio-row">
+              <label class="radio-pill"><input type="radio" name="level_math" value="pro" required><span>Pro</span></label>
+              <label class="radio-pill"><input type="radio" name="level_math" value="noob"><span>Noob</span></label>
+            </div>
+          </div>
+          <div class="subject-row">
+            <span class="subject-name">Englisch</span>
+            <div class="radio-row">
+              <label class="radio-pill"><input type="radio" name="level_english" value="pro" required><span>Pro</span></label>
+              <label class="radio-pill"><input type="radio" name="level_english" value="noob"><span>Noob</span></label>
+            </div>
+          </div>
+        </fieldset>
+
+        <button type="submit" class="btn btn-block">Registrieren</button>
+      </form>
+      <p class="muted">Schon ein Konto? <a href="/login.html">Zum Login</a></p>
+    </section>
+  </main>
+  <script src="/js/flash.js"></script>
+  <script src="/js/nav.js"></script>
+</body>
+</html>
