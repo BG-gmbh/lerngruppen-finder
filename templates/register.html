@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Registrieren — Schul-Tinder{% endblock %}
+{% block body %}
+<section class="card">
+  <h1>Konto erstellen</h1>
+  <form method="post" class="stack-form" autocomplete="on">
+    <label>
+      Benutzername
+      <input name="username" type="text" required minlength="3" maxlength="64" autocomplete="username">
+    </label>
+    <label>
+      Passwort
+      <input name="password" type="password" required minlength="6" autocomplete="new-password">
+    </label>
+    <label>
+      Passwort bestätigen
+      <input name="password_confirm" type="password" required minlength="6" autocomplete="new-password">
+    </label>
+    <button type="submit" class="btn btn-block">Registrieren</button>
+  </form>
+  <p class="muted">Schon ein Konto? <a href="{{ url_for('login') }}">Zum Login</a></p>
+</section>
+{% endblock %}

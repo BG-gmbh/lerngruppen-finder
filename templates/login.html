@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Login — Schul-Tinder{% endblock %}
+{% block body %}
+<section class="card">
+  <h1>Einloggen</h1>
+  <form method="post" class="stack-form" autocomplete="on">
+    <label>
+      Benutzername
+      <input name="username" type="text" required autocomplete="username">
+    </label>
+    <label>
+      Passwort
+      <input name="password" type="password" required autocomplete="current-password">
+    </label>
+    <button type="submit" class="btn btn-block">Login</button>
+  </form>
+  <p class="muted">Noch kein Konto? <a href="{{ url_for('register') }}">Registrieren</a></p>
+</section>
+{% endblock %}
