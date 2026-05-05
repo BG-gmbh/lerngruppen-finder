@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chat — Schul-Tinder</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="logo" href="/">Schul-Tinder</a>
+    <nav>
+      <span id="nav-guest" class="hidden">
+        <a href="/login.html">Login</a>
+        <a href="/register.html" class="btn btn-small">Registrieren</a>
+      </span>
+      <span id="nav-user" style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+        <span class="nav-user" id="nav-username"></span>
+        <a href="/dashboard.html" class="btn btn-small">Dashboard</a>
+        <a href="/settings.html" class="btn btn-small btn-secondary">Einstellungen</a>
+        <a href="/chat.html" class="btn btn-small btn-secondary">Chat</a>
+        <form class="inline-form" action="/logout" method="post">
+          <button type="submit" class="btn btn-ghost">Logout</button>
+        </form>
+      </span>
+    </nav>
+  </header>
+
+  <main class="container container-chat">
+    <section class="card" id="lobby">
+      <h1>Fächer-Chat</h1>
+      <p class="field-hint">
+        Pro und Noob schreiben im selben Raum je Fach. Maximal <strong id="max-users-label">5</strong> Personen gleichzeitig pro Raum
+        (wer 2 Minuten nichts tut, fliegt raumtechnisch raus und macht Platz).
+      </p>
+      <div id="room-cards" class="room-cards" aria-live="polite"></div>
+      <p class="muted" id="lobby-error" role="alert"></p>
+    </section>
+
+    <section class="card chat-panel hidden" id="chat-panel">
+      <div class="chat-panel-head">
+        <h2 id="chat-title">Chat</h2>
+        <button type="button" class="btn btn-ghost btn-small" id="btn-leave">Raum verlassen</button>
+      </div>
+      <p class="field-hint" id="chat-roster"></p>
+      <div id="chat-messages" class="chat-messages" aria-live="polite"></div>
+      <form id="chat-send-form" class="chat-send">
+        <label class="sr-only" for="chat-input">Nachricht</label>
+        <input id="chat-input" name="body" type="text" maxlength="500" autocomplete="off" placeholder="Nachricht schreiben …" required>
+        <button type="submit" class="btn">Senden</button>
+      </form>
+    </section>
+  </main>
+  <script src="/js/chat.js"></script>
+</body>
+</html>
