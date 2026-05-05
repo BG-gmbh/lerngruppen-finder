@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Einstellungen — Schul-Tinder</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="logo" href="/">Schul-Tinder</a>
+    <nav>
+      <span id="nav-guest" class="hidden">
+        <a href="/login.html">Login</a>
+        <a href="/register.html" class="btn btn-small">Registrieren</a>
+      </span>
+      <span id="nav-user" style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+        <span class="nav-user" id="nav-username"></span>
+        <a href="/dashboard.html" class="btn btn-small">Dashboard</a>
+        <a href="/chat.html" class="btn btn-small btn-secondary">Chat</a>
+        <a href="/settings.html" class="btn btn-small btn-secondary">Einstellungen</a>
+        <form class="inline-form" action="/logout" method="post">
+          <button type="submit" class="btn btn-ghost">Logout</button>
+        </form>
+      </span>
+    </nav>
+  </header>
+
+  <main class="container container-wide">
+    <ul id="flash-banner"></ul>
+    <section class="card">
+      <h1>Einstellungen</h1>
+      <p class="field-hint">Pro = stark im Fach · Noob = eher Anfänger. Änderungen mit „Speichern“ übernehmen.</p>
+
+      <form method="post" action="/profile" class="stack-form">
+        <fieldset class="subject-levels subject-levels-plain">
+          <div class="subject-row">
+            <span class="subject-name">Deutsch</span>
+            <div class="radio-row">
+              <label class="radio-pill"><input type="radio" name="level_german" value="pro" required><span>Pro</span></label>
+              <label class="radio-pill"><input type="radio" name="level_german" value="noob"><span>Noob</span></label>
+            </div>
+          </div>
+          <div class="subject-row">
+            <span class="subject-name">Mathe</span>
+            <div class="radio-row">
+              <label class="radio-pill"><input type="radio" name="level_math" value="pro" required><span>Pro</span></label>
+              <label class="radio-pill"><input type="radio" name="level_math" value="noob"><span>Noob</span></label>
+            </div>
+          </div>
+          <div class="subject-row">
+            <span class="subject-name">Englisch</span>
+            <div class="radio-row">
+              <label class="radio-pill"><input type="radio" name="level_english" value="pro" required><span>Pro</span></label>
+              <label class="radio-pill"><input type="radio" name="level_english" value="noob"><span>Noob</span></label>
+            </div>
+          </div>
+        </fieldset>
+        <button type="submit" class="btn btn-block">Speichern</button>
+      </form>
+
+      <p class="muted"><a href="/dashboard.html">Zurück zum Dashboard</a></p>
+    </section>
+  </main>
+  <script src="/js/flash.js"></script>
+  <script>
+    function setRadios(data) {
+      [
+        ["level_german", data.level_german],
+        ["level_math", data.level_math],
+        ["level_english", data.level_english],
+      ].forEach(function (pair) {
+        var name = pair[0];
+        var val = pair[1];
+        var el = document.querySelector('input[name="' + name + '"][value="' + val + '"]');
+        if (el) el.checked = true;
+      });
+    }
+
+    fetch("/api/me", { credentials: "same-origin" })
+      .then(function (r) {
+        if (r.status === 401) {
+          window.location.replace("/login.html?next=/settings.html&flash=needlogin");
+          return;
+        }
+        return r.json();
+      })
+      .then(function (data) {
+        if (!data || !data.username) return;
+        document.getElementById("nav-username").textContent = data.username;
+        setRadios(data);
+      });
+  </script>
+</body>
+</html>

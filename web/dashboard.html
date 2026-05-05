@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard — Schul-Tinder</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="logo" href="/">Schul-Tinder</a>
+    <nav>
+      <span id="nav-guest" class="hidden">
+        <a href="/login.html">Login</a>
+        <a href="/register.html" class="btn btn-small">Registrieren</a>
+      </span>
+      <span id="nav-user" style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+        <span class="nav-user" id="nav-username"></span>
+        <a href="/chat.html" class="btn btn-small btn-secondary">Chat</a>
+        <a href="/settings.html" class="btn btn-small btn-secondary">Einstellungen</a>
+        <form class="inline-form" action="/logout" method="post">
+          <button type="submit" class="btn btn-ghost">Logout</button>
+        </form>
+      </span>
+    </nav>
+  </header>
+
+  <main class="container container-wide">
+    <ul id="flash-banner"></ul>
+    <section class="card">
+      <h1>Hallo, <span id="welcome-name">…</span></h1>
+      <p id="level-summary" class="level-summary muted"></p>
+      <p class="muted" style="margin-top:1rem;">
+        Mit anderen im Fachchat: <a href="/chat.html">Chat öffnen</a>
+        (max. 5 Personen gleichzeitig pro Fach).
+      </p>
+      <p class="muted">
+        Fächer (Deutsch, Mathe, Englisch) änderst du unter
+        <a href="/settings.html">Einstellungen</a>.
+      </p>
+    </section>
+  </main>
+  <script src="/js/flash.js"></script>
+  <script>
+    function labelLevel(v) {
+      return v === "pro" ? "Pro" : "Noob";
+    }
+
+    function setSummary(data) {
+      var el = document.getElementById("level-summary");
+      if (!el || !data) return;
+      el.textContent =
+        "Deutsch: " +
+        labelLevel(data.level_german) +
+        " · Mathe: " +
+        labelLevel(data.level_math) +
+        " · Englisch: " +
+        labelLevel(data.level_english);
+    }
+
+    fetch("/api/me", { credentials: "same-origin" })
+      .then(function (r) {
+        if (r.status === 401) {
+          window.location.replace("/login.html?next=/dashboard.html&flash=needlogin");
+          return;
+        }
+        return r.json();
+      })
+      .then(function (data) {
+        if (!data || !data.username) return;
+        document.getElementById("welcome-name").textContent = data.username;
+        var navName = document.getElementById("nav-username");
+        if (navName) navName.textContent = data.username;
+        setSummary(data);
+      });
+  </script>
+</body>
+</html>
