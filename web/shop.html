@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shop — lerngruppen finder</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="logo" href="/">lerngruppen finder</a>
+    <nav>
+      <span id="nav-guest" class="hidden">
+        <a href="/login.html">Login</a>
+        <a href="/einladung.html" class="btn btn-small btn-secondary">Einladungscode</a>
+      </span>
+      <span id="nav-user" style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+        <span class="nav-user" id="nav-username"></span>
+        <a href="/dashboard.html" class="btn btn-small">Dashboard</a>
+        <a href="/shop.html" class="btn btn-small btn-secondary">Shop</a>
+        <a href="/chat.html" class="btn btn-small btn-secondary">Chat</a>
+        <a href="/settings.html" class="btn btn-small btn-secondary">Einstellungen</a>
+        <a href="/admin.html" id="nav-admin" class="btn btn-small hidden">Admin</a>
+        <form class="inline-form" action="/logout" method="post">
+          <button type="submit" class="btn btn-ghost">Logout</button>
+        </form>
+      </span>
+    </nav>
+  </header>
+
+  <main class="container container-wide">
+    <ul id="flash-banner"></ul>
+    <h1 class="page-title">Shop</h1>
+    <p class="muted" style="margin-bottom:1.5rem;">
+      Angebote und Materialien (vom Team gepflegt). Bei Fragen nutze den Fach-Chat.
+    </p>
+    <div id="shop-list" class="shop-grid"></div>
+    <p id="shop-empty" class="muted hidden">Aktuell keine Einträge.</p>
+  </main>
+
+  <script src="/js/flash.js"></script>
+  <script src="/js/nav.js"></script>
+  <script>
+    (function () {
+      function esc(s) {
+        if (s == null) return "";
+        var d = document.createElement("div");
+        d.textContent = s;
+        return d.innerHTML;
+      }
+
+      fetch("/api/shop", { credentials: "same-origin" })
+        .then(function (r) {
+          if (r.status === 401) {
+            window.location.href = "/login.html?flash=needlogin";
+            return null;
+          }
+          return r.json();
+        })
+        .then(function (data) {
+          var host = document.getElementById("shop-list");
+          var empty = document.getElementById("shop-empty");
+          if (!data || !data.items || !data.items.length) {
+            host.innerHTML = "";
+            empty.classList.remove("hidden");
+            return;
+          }
+          empty.classList.add("hidden");
+          host.innerHTML = "";
+          data.items.forEach(function (it) {
+            var card = document.createElement("article");
+            card.className = "card shop-card";
+            card.innerHTML =
+              "<h2 class=\"card-title\">" +
+              esc(it.title) +
+              "</h2>" +
+              (it.price_hint
+                ? "<p class=\"shop-price\">" + esc(it.price_hint) + "</p>"
+                : "") +
+              "<div class=\"shop-desc\">" +
+              esc(it.description).replace(/\n/g, "<br>") +
+              "</div>";
+            host.appendChild(card);
+          });
+        });
+    })();
+  </script>
+</body>
+</html>

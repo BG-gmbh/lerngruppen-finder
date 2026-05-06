@@ -87,8 +87,12 @@
 
     <section class="card tab-panel hidden" id="tab-chats" role="tabpanel">
       <h2 class="card-title">Chats verwalten</h2>
-      <p class="field-hint">Nachrichten, Termine und Bewertungen eines Fachs löschen (Nutzerkonten bleiben).</p>
+      <p class="field-hint">Nachrichten, Termine und Bewertungen eines Fachs löschen (Nutzerkonten bleiben; gespeicherte <strong>Admin-Punkte</strong> pro Nutzer/Fach bleiben erhalten).</p>
       <ul id="chat-admin-list" class="code-list"></ul>
+
+      <h3 class="subsection-title">Termin-Bewertungen</h3>
+      <p class="field-hint">Alle abgegebenen Sterne-Bewertungen. Pro Nutzer und Fach kannst du unten <strong>Admin-Punkte</strong> und eine kurze Notiz speichern (z. B. Anrechnung oder Hinweis fürs Team).</p>
+      <div id="admin-ratings-wrap" class="table-scroll"></div>
     </section>
 
     <section class="card tab-panel hidden" id="tab-users" role="tabpanel">
@@ -296,6 +300,118 @@
         }
       });
 
+      function esc(s) {
+        if (s == null) return "";
+        var d = document.createElement("div");
+        d.textContent = s;
+        return d.innerHTML;
+      }
+
+      function renderAdminRatings(data) {
+        var wrap = document.getElementById("admin-ratings-wrap");
+        if (!wrap) return;
+        wrap.innerHTML = "";
+        if (!data || !data.ratings || !data.ratings.length) {
+          var p = document.createElement("p");
+          p.className = "muted";
+          p.textContent = "Keine Bewertungen in der Datenbank.";
+          wrap.appendChild(p);
+          return;
+        }
+        var table = document.createElement("table");
+        table.className = "admin-table";
+        var thead = document.createElement("thead");
+        thead.innerHTML =
+          "<tr><th>Fach</th><th>Nutzer</th><th>Sterne</th><th>Kommentar</th><th>Datum</th><th>Admin-Punkte</th><th>Admin-Notiz</th><th></th></tr>";
+        table.appendChild(thead);
+        var tbody = document.createElement("tbody");
+        data.ratings.forEach(function (rv) {
+          var tr = document.createElement("tr");
+          var comment = rv.comment || "";
+          if (comment.length > 160) {
+            comment = comment.slice(0, 157) + "…";
+          }
+          tr.innerHTML =
+            "<td>" +
+            esc(rv.subject_label) +
+            "</td><td>" +
+            esc(rv.username) +
+            " <span class=\"muted\">(#" +
+            rv.user_id +
+            ")</span></td><td>" +
+            rv.rating +
+            "/5</td><td class=\"admin-rating-comment\">" +
+            esc(comment).replace(/\n/g, "<br>") +
+            "</td><td class=\"muted\">" +
+            esc(rv.created_at) +
+            "</td>";
+          var tdPts = document.createElement("td");
+          var inpPts = document.createElement("input");
+          inpPts.type = "number";
+          inpPts.className = "admin-points-input";
+          inpPts.value = String(rv.admin_points != null ? rv.admin_points : 0);
+          inpPts.setAttribute("data-user-id", String(rv.user_id));
+          inpPts.setAttribute("data-subject", rv.subject);
+          tdPts.appendChild(inpPts);
+          tr.appendChild(tdPts);
+          var tdNote = document.createElement("td");
+          var inpNote = document.createElement("input");
+          inpNote.type = "text";
+          inpNote.className = "admin-note-input";
+          inpNote.maxLength = 500;
+          inpNote.value = rv.admin_note || "";
+          inpNote.setAttribute("data-user-id", String(rv.user_id));
+          inpNote.setAttribute("data-subject", rv.subject);
+          tdNote.appendChild(inpNote);
+          tr.appendChild(tdNote);
+          var tdBtn = document.createElement("td");
+          var save = document.createElement("button");
+          save.type = "button";
+          save.className = "btn btn-small";
+          save.textContent = "Punkte speichern";
+          save.addEventListener("click", function () {
+            var uid = parseInt(inpPts.getAttribute("data-user-id"), 10);
+            var sub = inpPts.getAttribute("data-subject");
+            var pts = parseInt(inpPts.value, 10);
+            if (isNaN(pts)) pts = 0;
+            fetch("/api/admin/subject-score", {
+              method: "PUT",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                user_id: uid,
+                subject: sub,
+                points: pts,
+                note: inpNote.value.trim(),
+              }),
+            })
+              .then(function (r) {
+                return r.json().then(function (d) {
+                  return { ok: r.ok, d: d };
+                });
+              })
+              .then(function (x) {
+                if (!x.ok) {
+                  window.alert(
+                    x.d && x.d.error ? "Fehler: " + x.d.error : "Speichern fehlgeschlagen."
+                  );
+                  return;
+                }
+                save.textContent = "Gespeichert";
+                setTimeout(function () {
+                  save.textContent = "Punkte speichern";
+                }, 1500);
+                loadChats();
+              });
+          });
+          tdBtn.appendChild(save);
+          tr.appendChild(tdBtn);
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        wrap.appendChild(table);
+      }
+
       function loadChats() {
         fetch("/api/admin/chats", { credentials: "same-origin" })
           .then(function (r) {
@@ -311,49 +427,62 @@
               li0.textContent = "Keine Daten.";
               li0.className = "muted";
               ul.appendChild(li0);
-              return;
-            }
-            data.chats.forEach(function (c) {
-              var li = document.createElement("li");
-              var span = document.createElement("span");
-              span.textContent =
-                c.label + " — " + c.message_count + " Nachricht(en)";
-              li.appendChild(span);
-              var del = document.createElement("button");
-              del.type = "button";
-              del.className = "btn btn-small btn-secondary";
-              del.style.marginLeft = "0.75rem";
-              del.textContent = "Chat leeren";
-              del.addEventListener("click", function () {
-                if (
-                  !window.confirm(
-                    "Alle Nachrichten und Termin-Daten für " +
-                      c.label +
-                      " wirklich löschen?"
-                  )
-                ) {
-                  return;
-                }
-                fetch("/api/admin/delete_chat/" + encodeURIComponent(c.subject), {
-                  method: "DELETE",
-                  credentials: "same-origin",
-                })
-                  .then(function (r) {
-                    return r.json().then(function (d) {
-                      return { ok: r.ok, d: d };
-                    });
+            } else {
+              data.chats.forEach(function (c) {
+                var li = document.createElement("li");
+                var span = document.createElement("span");
+                span.textContent =
+                  c.label +
+                  " — " +
+                  c.message_count +
+                  " Nachricht(en), " +
+                  (c.rating_count != null ? c.rating_count : 0) +
+                  " Bewertung(en)";
+                li.appendChild(span);
+                var del = document.createElement("button");
+                del.type = "button";
+                del.className = "btn btn-small btn-secondary";
+                del.style.marginLeft = "0.75rem";
+                del.textContent = "Chat leeren";
+                del.addEventListener("click", function () {
+                  if (
+                    !window.confirm(
+                      "Alle Nachrichten, Termine und Sterne-Bewertungen für " +
+                        c.label +
+                        " wirklich löschen?"
+                    )
+                  ) {
+                    return;
+                  }
+                  fetch("/api/admin/delete_chat/" + encodeURIComponent(c.subject), {
+                    method: "DELETE",
+                    credentials: "same-origin",
                   })
-                  .then(function (x) {
-                    if (!x.ok) {
-                      window.alert("Löschen fehlgeschlagen.");
-                      return;
-                    }
-                    loadChats();
-                  });
+                    .then(function (r) {
+                      return r.json().then(function (d) {
+                        return { ok: r.ok, d: d };
+                      });
+                    })
+                    .then(function (x) {
+                      if (!x.ok) {
+                        window.alert("Löschen fehlgeschlagen.");
+                        return;
+                      }
+                      loadChats();
+                    });
+                });
+                li.appendChild(del);
+                ul.appendChild(li);
               });
-              li.appendChild(del);
-              ul.appendChild(li);
-            });
+            }
+            return fetch("/api/admin/ratings", { credentials: "same-origin" });
+          })
+          .then(function (r) {
+            if (!r || r.status === 401 || r.status === 403) return null;
+            return r.json();
+          })
+          .then(function (ratingData) {
+            if (ratingData) renderAdminRatings(ratingData);
           });
       }
 
