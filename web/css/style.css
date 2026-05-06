@@ -445,6 +445,48 @@ a:hover {
   word-break: break-word;
 }
 
+.chat-rating-box {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  margin-top: 0.75rem;
+  border: 1px solid #2a3544;
+  border-radius: 8px;
+  background: rgba(42, 53, 68, 0.12);
+}
+
+.chat-rating-input,
+.chat-rating-textarea {
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid #2a3544;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.chat-rating-textarea {
+  min-height: 5rem;
+}
+
+.chat-appointment {
+  border: 1px solid #2a3544;
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+  background: rgba(42, 53, 68, 0.12);
+}
+
+.chat-appointment-text {
+  margin: 0 0 0.5rem;
+}
+
+.room-appointment {
+  margin: 0.75rem 0 0;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
 .chat-send {
   display: flex;
   gap: 0.5rem;

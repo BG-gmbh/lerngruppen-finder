@@ -1,4 +1,4 @@
-# schul-tinder
+# lerngruppen finder
 
 **Normale Webseiten** (HTML/CSS/JS) im Ordner `web/` — Start, Login, Registrierung, Dashboard. Damit Konten und Passwörter sicher bleiben, läuft dazu ein kleiner **Python-Server** (`app.py`), der nur Formulare, Session und die Datenbank übernimmt.
 

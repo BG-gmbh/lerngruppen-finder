@@ -100,6 +100,7 @@ def init_db():
         db.commit()
         _ensure_subject_columns(db)
         _ensure_role_column(db)
+        _ensure_banned_column(db)
         _ensure_chat_tables(db)
         _ensure_invite_codes(db)
 
@@ -110,6 +111,16 @@ def _ensure_role_column(db):
     if "role" not in names:
         db.execute(
             "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'"
+        )
+    db.commit()
+
+
+def _ensure_banned_column(db):
+    cur = db.execute("PRAGMA table_info(users)")
+    names = {row[1] for row in cur.fetchall()}
+    if "banned" not in names:
+        db.execute(
+            "ALTER TABLE users ADD COLUMN banned INTEGER NOT NULL DEFAULT 0"
         )
     db.commit()
 
@@ -136,6 +147,41 @@ def _ensure_chat_tables(db):
             username TEXT NOT NULL,
             body TEXT NOT NULL,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chat_appointments (
+            subject TEXT PRIMARY KEY,
+            appointment TEXT NOT NULL,
+            created_by INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')), 
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            ended INTEGER NOT NULL DEFAULT 0,
+            ended_at TEXT
+        )
+        """
+    )
+    cur = db.execute("PRAGMA table_info(chat_appointments)")
+    appointment_cols = {row[1] for row in cur.fetchall()}
+    if "ended" not in appointment_cols:
+        db.execute(
+            "ALTER TABLE chat_appointments ADD COLUMN ended INTEGER NOT NULL DEFAULT 0"
+        )
+    if "ended_at" not in appointment_cols:
+        db.execute(
+            "ALTER TABLE chat_appointments ADD COLUMN ended_at TEXT"
+        )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chat_ratings (
+            subject TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            rating INTEGER NOT NULL,
+            comment TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (subject, user_id)
         )
         """
     )
@@ -191,6 +237,10 @@ def login_required_api(view):
     def wrapped(*args, **kwargs):
         if not session.get("user_id"):
             return jsonify(error="auth"), 401
+        db = get_db()
+        if is_user_banned(db, session["user_id"]):
+            session.clear()
+            return jsonify(error="banned"), 403
         return view(*args, **kwargs)
 
     return wrapped
@@ -201,6 +251,11 @@ def admin_required(view):
     def wrapped(*args, **kwargs):
         if not session.get("user_id"):
             q = urlencode({"flash": "needlogin", "next": request.path})
+            return redirect(f"/login.html?{q}")
+        db = get_db()
+        if is_user_banned(db, session["user_id"]):
+            session.clear()
+            q = urlencode({"flash": "banned"})
             return redirect(f"/login.html?{q}")
         if session.get("role") != "admin":
             return redirect("/dashboard.html?flash=admin_only")
@@ -223,6 +278,11 @@ def admin_api(view):
 
 def _user_count(db):
     return int(db.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"])
+
+
+def is_user_banned(db, user_id):
+    row = db.execute("SELECT banned FROM users WHERE id = ?", (user_id,)).fetchone()
+    return bool(row and row["banned"])
 
 
 @app.route("/")
@@ -350,6 +410,96 @@ def admin_create_user():
         return redirect("/admin.html?flash=taken")
 
     return redirect("/admin.html?flash=user_created")
+
+
+@app.route("/api/admin/users", methods=["GET"])
+@admin_api
+def admin_user_list():
+    db = get_db()
+    rows = db.execute(
+        "SELECT id, username, role, banned FROM users ORDER BY username COLLATE NOCASE"
+    ).fetchall()
+    return jsonify(
+        users=[
+            {
+                "id": r["id"],
+                "username": r["username"],
+                "role": r["role"],
+                "banned": bool(r["banned"]),
+            }
+            for r in rows
+        ]
+    )
+
+
+@app.route("/api/admin/users/ban", methods=["POST"])
+@admin_api
+def admin_user_ban():
+    data = request.get_json(silent=True) or {}
+    try:
+        user_id = int(data.get("user_id") or 0)
+    except (TypeError, ValueError):
+        return jsonify(error="invalid_user"), 400
+    ban = data.get("ban")
+    if ban in (True, "true", "1", 1):
+        banned = 1
+    elif ban in (False, "false", "0", 0):
+        banned = 0
+    else:
+        return jsonify(error="invalid_ban"), 400
+    if user_id == session["user_id"]:
+        return jsonify(error="self_ban"), 400
+    db = get_db()
+    row = db.execute("SELECT 1 FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not row:
+        return jsonify(error="not_found"), 404
+    db.execute("UPDATE users SET banned = ? WHERE id = ?", (banned, user_id))
+    db.commit()
+    return jsonify(ok=True)
+
+
+@app.route("/api/admin/delete_message/<int:message_id>", methods=["DELETE"])
+@admin_api
+def admin_delete_message(message_id):
+    db = get_db()
+    row = db.execute("SELECT id FROM chat_messages WHERE id = ?", (message_id,)).fetchone()
+    if not row:
+        return jsonify(error="message_not_found"), 404
+    db.execute("DELETE FROM chat_messages WHERE id = ?", (message_id,))
+    db.commit()
+    return jsonify(success=True)
+
+
+@app.route("/api/admin/chats", methods=["GET"])
+@admin_api
+def admin_get_chats():
+    db = get_db()
+    result = []
+    for subject in CHAT_SUBJECTS:
+        count = db.execute(
+            "SELECT COUNT(*) as c FROM chat_messages WHERE subject = ?",
+            (subject,)
+        ).fetchone()["c"]
+        result.append({
+            "subject": subject,
+            "label": CHAT_SUBJECT_LABELS[subject],
+            "message_count": count
+        })
+    return jsonify(chats=result)
+
+
+@app.route("/api/admin/delete_chat/<subject>", methods=["DELETE"])
+@admin_api
+def admin_delete_chat(subject):
+    if subject not in CHAT_SUBJECTS:
+        return jsonify(error="invalid_subject"), 400
+    db = get_db()
+    db.execute("DELETE FROM chat_messages WHERE subject = ?", (subject,))
+    db.execute("DELETE FROM chat_appointments WHERE subject = ?", (subject,))
+    db.execute("DELETE FROM chat_ratings WHERE subject = ?", (subject,))
+    db.execute("DELETE FROM chat_presence WHERE subject = ?", (subject,))
+    db.commit()
+    return jsonify(success=True)
 
 
 @app.route("/api/setup-status", methods=["GET"])
@@ -484,6 +634,10 @@ def chat_rooms():
             "SELECT 1 FROM chat_presence WHERE subject = ? AND user_id = ?",
             (sub, uid),
         ).fetchone()
+        appointment_row = db.execute(
+            "SELECT appointment FROM chat_appointments WHERE subject = ?",
+            (sub,),
+        ).fetchone()
         you_in = you is not None
         count = len(members)
         full = count >= CHAT_MAX_USERS and not you_in
@@ -495,6 +649,7 @@ def chat_rooms():
                 "max": CHAT_MAX_USERS,
                 "full": full,
                 "you_in": you_in,
+                "appointment": appointment_row["appointment"] if appointment_row else None,
                 "members": [
                     {"username": m["username"], "level": m["level"]} for m in members
                 ],
@@ -502,6 +657,168 @@ def chat_rooms():
         )
     db.commit()
     return jsonify(rooms=rooms)
+
+
+@app.route("/api/chat/appointment", methods=["GET"])
+@login_required_api
+def chat_appointment_get():
+    subject = chat_subject_key(request.args.get("subject"))
+    if not subject:
+        return jsonify(error="invalid_subject"), 400
+    db = get_db()
+    uid = session["user_id"]
+    row = db.execute(
+        "SELECT appointment, created_at, ended, ended_at FROM chat_appointments WHERE subject = ?",
+        (subject,),
+    ).fetchone()
+    if not row:
+        db.commit()
+        return jsonify(appointment=None)
+
+    your_rating = db.execute(
+        "SELECT rating, comment FROM chat_ratings WHERE subject = ? AND user_id = ?",
+        (subject, uid),
+    ).fetchone()
+    rating_stats = db.execute(
+        "SELECT COUNT(*) AS count, AVG(rating) AS avg FROM chat_ratings WHERE subject = ?",
+        (subject,),
+    ).fetchone()
+    db.commit()
+    return jsonify(
+        appointment=row["appointment"],
+        created_at=row["created_at"],
+        ended=bool(row["ended"]),
+        ended_at=row["ended_at"],
+        your_rating={
+            "rating": your_rating["rating"],
+            "comment": your_rating["comment"],
+        } if your_rating else None,
+        rating_count=rating_stats["count"],
+        rating_avg=float(rating_stats["avg"]) if rating_stats["avg"] is not None else None,
+    )
+
+
+@app.route("/api/chat/appointment", methods=["POST"])
+@login_required_api
+def chat_appointment_post():
+    data = request.get_json(silent=True) or {}
+    subject = chat_subject_key(data.get("subject"))
+    appointment = (data.get("appointment") or "").strip()
+    if not subject:
+        return jsonify(error="invalid_subject"), 400
+    if not appointment:
+        return jsonify(error="empty"), 400
+
+    db = get_db()
+    uid = session["user_id"]
+    level = _user_level_for_subject(db, uid, subject)
+    if level != "pro":
+        return jsonify(error="permission"), 403
+
+    now = db.execute("SELECT datetime('now') AS now").fetchone()["now"]
+    existing = db.execute(
+        "SELECT 1 FROM chat_appointments WHERE subject = ?",
+        (subject,),
+    ).fetchone()
+    if existing:
+        db.execute(
+            """
+            UPDATE chat_appointments
+            SET appointment = ?, created_by = ?, updated_at = ?
+            WHERE subject = ?
+            """,
+            (appointment, uid, now, subject),
+        )
+    else:
+        db.execute(
+            """
+            INSERT INTO chat_appointments (subject, appointment, created_by, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (subject, appointment, uid, now, now),
+        )
+    db.commit()
+    return jsonify(ok=True)
+
+
+@app.route("/api/chat/appointment/end", methods=["POST"])
+@login_required_api
+def chat_appointment_end():
+    data = request.get_json(silent=True) or {}
+    subject = chat_subject_key(data.get("subject"))
+    if not subject:
+        return jsonify(error="invalid_subject"), 400
+    db = get_db()
+    uid = session["user_id"]
+    level = _user_level_for_subject(db, uid, subject)
+    if level != "pro":
+        return jsonify(error="permission"), 403
+    row = db.execute(
+        "SELECT ended FROM chat_appointments WHERE subject = ?",
+        (subject,),
+    ).fetchone()
+    if not row:
+        db.commit()
+        return jsonify(error="no_appointment"), 400
+    if row["ended"]:
+        db.commit()
+        return jsonify(ok=True)
+    now = db.execute("SELECT datetime('now') AS now").fetchone()["now"]
+    db.execute(
+        "UPDATE chat_appointments SET ended = 1, ended_at = ?, updated_at = ? WHERE subject = ?",
+        (now, now, subject),
+    )
+    db.commit()
+    return jsonify(ok=True)
+
+
+@app.route("/api/chat/appointment/rate", methods=["POST"])
+@login_required_api
+def chat_appointment_rate():
+    data = request.get_json(silent=True) or {}
+    subject = chat_subject_key(data.get("subject"))
+    if not subject:
+        return jsonify(error="invalid_subject"), 400
+    try:
+        rating = int(data.get("rating"))
+    except (TypeError, ValueError):
+        return jsonify(error="invalid_rating"), 400
+    if rating < 1 or rating > 5:
+        return jsonify(error="invalid_rating"), 400
+    comment = (data.get("comment") or "").strip()
+    db = get_db()
+    uid = session["user_id"]
+    appointment = db.execute(
+        "SELECT ended FROM chat_appointments WHERE subject = ?",
+        (subject,),
+    ).fetchone()
+    if not appointment or not appointment["ended"]:
+        db.commit()
+        return jsonify(error="not_ended"), 400
+    in_room = db.execute(
+        "SELECT 1 FROM chat_presence WHERE subject = ? AND user_id = ?",
+        (subject, uid),
+    ).fetchone()
+    if not in_room:
+        db.commit()
+        return jsonify(error="not_in_room"), 403
+    existing = db.execute(
+        "SELECT 1 FROM chat_ratings WHERE subject = ? AND user_id = ?",
+        (subject, uid),
+    ).fetchone()
+    now = db.execute("SELECT datetime('now') AS now").fetchone()["now"]
+    if existing:
+        db.execute(
+            "UPDATE chat_ratings SET rating = ?, comment = ?, created_at = ? WHERE subject = ? AND user_id = ?",
+            (rating, comment, now, subject, uid),
+        )
+    else:
+        db.execute(
+            "INSERT INTO chat_ratings (subject, user_id, rating, comment, created_at) VALUES (?, ?, ?, ?, ?)",
+            (subject, uid, rating, comment, now),
+        )
+    db.commit()
+    return jsonify(ok=True)
 
 
 @app.route("/api/chat/join", methods=["POST"])
@@ -679,12 +996,14 @@ def login():
 
     db = get_db()
     row = db.execute(
-        "SELECT id, password_hash, role FROM users WHERE username = ?",
+        "SELECT id, password_hash, role, banned FROM users WHERE username = ?",
         (username,),
     ).fetchone()
 
     if row is None or not check_password_hash(row["password_hash"], password):
         return redirect("/login.html?flash=invalid")
+    if row["banned"]:
+        return redirect("/login.html?flash=banned")
 
     session.clear()
     session["user_id"] = row["id"]

@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Admin — Schul-Tinder</title>
+  <title>Admin — lerngruppen finder</title>
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
   <header class="site-header">
-    <a class="logo" href="/">Schul-Tinder</a>
+    <a class="logo" href="/">lerngruppen finder</a>
     <nav>
       <span class="nav-user" id="nav-username"></span>
       <a href="/dashboard.html" class="btn btn-small">Dashboard</a>
@@ -27,6 +27,8 @@
 
     <div class="tabs" role="tablist">
       <button type="button" class="tab-btn is-active" role="tab" aria-selected="true" data-tab="accounts">Accounts anlegen</button>
+      <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="users">Nutzer verwalten</button>
+      <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="chats">Chats verwalten</button>
       <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="codes">Einladungs-Codes</button>
     </div>
 
@@ -82,6 +84,12 @@
       </form>
     </section>
 
+    <section class="card tab-panel hidden" id="tab-users" role="tabpanel">
+      <h2 class="card-title">Nutzer verwalten</h2>
+      <p class="field-hint">Hier siehst du alle Konten. Du kannst Nutzer sperren oder entsperren.</p>
+      <ul id="user-list" class="code-list"></ul>
+    </section>
+
     <section class="card tab-panel hidden" id="tab-codes" role="tabpanel">
       <h2 class="card-title">Einmal-Codes</h2>
       <p class="field-hint">Jeder Code funktioniert nur <strong>einmal</strong>. Empfänger trägt ihn unter <a href="/einladung.html">Mit Einladungscode</a> ein und wählt Benutzername und Passwort.</p>
@@ -96,7 +104,70 @@
   <script>
     (function () {
       var buttons = document.querySelectorAll(".tab-btn");
-      var panels = { accounts: document.getElementById("tab-accounts"), codes: document.getElementById("tab-codes") };
+      var panels = {
+        accounts: document.getElementById("tab-accounts"),
+        users: document.getElementById("tab-users"),
+        codes: document.getElementById("tab-codes"),
+      };
+
+      function renderUsers(data) {
+        var list = document.getElementById("user-list");
+        list.innerHTML = "";
+        if (!data || !data.users || !data.users.length) {
+          var li = document.createElement("li");
+          li.textContent = "Keine Nutzer gefunden.";
+          li.className = "muted";
+          list.appendChild(li);
+          return;
+        }
+        data.users.forEach(function (user) {
+          var li = document.createElement("li");
+          var info = document.createElement("span");
+          info.textContent = user.username + " (" + user.role + ")";
+          if (user.banned) {
+            info.textContent += " — gesperrt";
+          }
+          li.appendChild(info);
+          var btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "btn btn-small";
+          btn.style.marginLeft = "1rem";
+          btn.textContent = user.banned ? "Entsperren" : "Sperren";
+          btn.addEventListener("click", function () {
+            fetch("/api/admin/users/ban", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ user_id: user.id, ban: !user.banned }),
+            })
+              .then(function (r) {
+                return r.json().then(function (data) {
+                  return { ok: r.ok, data: data };
+                });
+              })
+              .then(function (result) {
+                if (!result.ok) {
+                  window.alert("Fehler beim Sperren/Entsperren.");
+                  return;
+                }
+                loadUsers();
+              });
+          });
+          li.appendChild(btn);
+          list.appendChild(li);
+        });
+      }
+
+      function loadUsers() {
+        fetch("/api/admin/users", { credentials: "same-origin" })
+          .then(function (r) {
+            if (r.status === 401 || r.status === 403) return null;
+            return r.json();
+          })
+          .then(function (data) {
+            renderUsers(data);
+          });
+      }
 
       buttons.forEach(function (btn) {
         btn.addEventListener("click", function () {
@@ -109,6 +180,9 @@
             panels[k].classList.toggle("hidden", k !== key);
             panels[k].classList.toggle("is-active", k === key);
           });
+          if (key === "users") {
+            loadUsers();
+          }
         });
       });
 

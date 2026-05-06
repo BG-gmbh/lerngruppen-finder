@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Chat — Schul-Tinder</title>
+  <title>Chat — lerngruppen finder</title>
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
   <header class="site-header">
-    <a class="logo" href="/">Schul-Tinder</a>
+    <a class="logo" href="/">lerngruppen finder</a>
     <nav>
       <span id="nav-guest" class="hidden">
         <a href="/login.html">Login</a>
@@ -34,6 +34,9 @@
         Pro und Noob schreiben im selben Raum je Fach. Maximal <strong id="max-users-label">5</strong> Personen gleichzeitig pro Raum.
         Platz wird frei, wenn jemand den Raum verlässt.
       </p>
+      <div class="chat-actions" style="margin-bottom:1rem;">
+        <button type="button" class="btn btn-primary" id="btn-create-room" style="display:none;">Raum erstellen</button>
+      </div>
       <div id="room-cards" class="room-cards" aria-live="polite"></div>
       <p class="muted" id="lobby-error" role="alert"></p>
     </section>
@@ -43,6 +46,7 @@
         <h2 id="chat-title">Chat</h2>
         <button type="button" class="btn btn-ghost btn-small" id="btn-leave">Raum verlassen</button>
       </div>
+      <div id="chat-appointment" class="chat-appointment"></div>
       <p class="field-hint" id="chat-roster"></p>
       <div id="chat-messages" class="chat-messages" aria-live="polite"></div>
       <form id="chat-send-form" class="chat-send">
