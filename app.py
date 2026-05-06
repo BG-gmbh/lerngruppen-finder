@@ -3,10 +3,14 @@ import secrets
 import sqlite3
 from contextlib import closing
 from functools import wraps
+from pathlib import Path
 from urllib.parse import urlencode
 
+from dotenv import load_dotenv
 from flask import Flask, g, jsonify, redirect, request, send_from_directory, session
 from werkzeug.security import check_password_hash, generate_password_hash
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 DATABASE = os.path.join(os.path.dirname(__file__), "users.db")
 LEVELS = frozenset({"pro", "medium", "noob"})
@@ -101,8 +105,13 @@ def init_db():
         _ensure_subject_columns(db)
         _ensure_role_column(db)
         _ensure_banned_column(db)
+        _ensure_user_teacher_email_prefs(db)
         _ensure_chat_tables(db)
         _ensure_invite_codes(db)
+        from shop import ensure_shop_table
+
+        ensure_shop_table(db)
+        _ensure_admin_subject_scores(db)
 
 
 def _ensure_role_column(db):
@@ -121,6 +130,18 @@ def _ensure_banned_column(db):
     if "banned" not in names:
         db.execute(
             "ALTER TABLE users ADD COLUMN banned INTEGER NOT NULL DEFAULT 0"
+        )
+    db.commit()
+
+
+def _ensure_user_teacher_email_prefs(db):
+    cur = db.execute("PRAGMA table_info(users)")
+    names = {row[1] for row in cur.fetchall()}
+    if "contact_email" not in names:
+        db.execute("ALTER TABLE users ADD COLUMN contact_email TEXT")
+    if "notify_laden_email" not in names:
+        db.execute(
+            "ALTER TABLE users ADD COLUMN notify_laden_email INTEGER NOT NULL DEFAULT 0"
         )
     db.commit()
 
@@ -209,6 +230,23 @@ def _ensure_invite_codes(db):
     db.commit()
 
 
+def _ensure_admin_subject_scores(db):
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS admin_subject_scores (
+            user_id INTEGER NOT NULL,
+            subject TEXT NOT NULL,
+            points INTEGER NOT NULL DEFAULT 0,
+            note TEXT,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_by INTEGER NOT NULL,
+            PRIMARY KEY (user_id, subject)
+        )
+        """
+    )
+    db.commit()
+
+
 def _user_level_for_subject(db, user_id, subject):
     col = CHAT_LEVEL_COLUMN[subject]
     row = db.execute(
@@ -219,6 +257,39 @@ def _user_level_for_subject(db, user_id, subject):
         return "noob"
     v = row["lvl"]
     return v if v in LEVELS else "noob"
+
+
+def _chat_presence_pro_count(db, subject):
+    return int(
+        db.execute(
+            "SELECT COUNT(*) AS c FROM chat_presence WHERE subject = ? AND level = 'pro'",
+            (subject,),
+        ).fetchone()["c"]
+    )
+
+
+def _chat_presence_non_pro_count(db, subject):
+    return int(
+        db.execute(
+            "SELECT COUNT(*) AS c FROM chat_presence WHERE subject = ? AND level != 'pro'",
+            (subject,),
+        ).fetchone()["c"]
+    )
+
+
+def _purge_chat_non_pros_if_no_pro(db, subject):
+    if _chat_presence_pro_count(db, subject) == 0:
+        db.execute(
+            "DELETE FROM chat_presence WHERE subject = ? AND level != 'pro'",
+            (subject,),
+        )
+
+
+def _chat_may_use_room(db, user_id, subject):
+    """Lesen/Schreiben: Pro im Fach oder mindestens ein Pro im Raum."""
+    if _user_level_for_subject(db, user_id, subject) == "pro":
+        return True
+    return _chat_presence_pro_count(db, subject) >= 1
 
 
 def login_required(view):
@@ -478,14 +549,107 @@ def admin_get_chats():
     for subject in CHAT_SUBJECTS:
         count = db.execute(
             "SELECT COUNT(*) as c FROM chat_messages WHERE subject = ?",
-            (subject,)
+            (subject,),
         ).fetchone()["c"]
-        result.append({
-            "subject": subject,
-            "label": CHAT_SUBJECT_LABELS[subject],
-            "message_count": count
-        })
+        rating_n = db.execute(
+            "SELECT COUNT(*) as c FROM chat_ratings WHERE subject = ?",
+            (subject,),
+        ).fetchone()["c"]
+        result.append(
+            {
+                "subject": subject,
+                "label": CHAT_SUBJECT_LABELS[subject],
+                "message_count": int(count),
+                "rating_count": int(rating_n),
+            }
+        )
     return jsonify(chats=result)
+
+
+@app.route("/api/admin/ratings", methods=["GET"])
+@admin_api
+def admin_list_ratings():
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT r.subject AS subject, r.user_id AS user_id, u.username AS username,
+               r.rating AS rating, r.comment AS comment, r.created_at AS created_at,
+               s.points AS admin_points, s.note AS admin_note
+        FROM chat_ratings r
+        JOIN users u ON u.id = r.user_id
+        LEFT JOIN admin_subject_scores s
+          ON s.user_id = r.user_id AND s.subject = r.subject
+        ORDER BY r.created_at DESC
+        LIMIT 500
+        """
+    ).fetchall()
+    db.commit()
+    return jsonify(
+        ratings=[
+            {
+                "subject": row["subject"],
+                "subject_label": CHAT_SUBJECT_LABELS.get(
+                    row["subject"], row["subject"]
+                ),
+                "user_id": row["user_id"],
+                "username": row["username"],
+                "rating": int(row["rating"]),
+                "comment": (row["comment"] or "").strip(),
+                "created_at": row["created_at"],
+                "admin_points": int(row["admin_points"] or 0),
+                "admin_note": row["admin_note"] or "",
+            }
+            for row in rows
+        ]
+    )
+
+
+@app.route("/api/admin/subject-score", methods=["PUT"])
+@admin_api
+def admin_put_subject_score():
+    data = request.get_json(silent=True) or {}
+    subject = chat_subject_key(data.get("subject"))
+    if not subject:
+        return jsonify(error="invalid_subject"), 400
+    try:
+        user_id = int(data.get("user_id"))
+    except (TypeError, ValueError):
+        return jsonify(error="invalid_user"), 400
+    try:
+        points = int(data.get("points", 0))
+    except (TypeError, ValueError):
+        return jsonify(error="invalid_points"), 400
+    if points < -10000 or points > 10000:
+        return jsonify(error="invalid_points"), 400
+    note = (data.get("note") or "").strip()
+    if len(note) > 500:
+        return jsonify(error="invalid_note"), 400
+
+    db = get_db()
+    urow = db.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not urow:
+        db.commit()
+        return jsonify(error="not_found"), 404
+    admin_id = session["user_id"]
+    now = db.execute("SELECT datetime('now') AS now").fetchone()["now"]
+    cur = db.execute(
+        """
+        UPDATE admin_subject_scores
+        SET points = ?, note = ?, updated_at = ?, updated_by = ?
+        WHERE user_id = ? AND subject = ?
+        """,
+        (points, note or None, now, admin_id, user_id, subject),
+    )
+    if cur.rowcount == 0:
+        db.execute(
+            """
+            INSERT INTO admin_subject_scores (user_id, subject, points, note, updated_at, updated_by)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (user_id, subject, points, note or None, now, admin_id),
+        )
+    db.commit()
+    return jsonify(ok=True)
 
 
 @app.route("/api/admin/delete_chat/<subject>", methods=["DELETE"])
@@ -639,15 +803,39 @@ def chat_rooms():
             (sub,),
         ).fetchone()
         you_in = you is not None
-        count = len(members)
-        full = count >= CHAT_MAX_USERS and not you_in
+        count_total = len(members)
+        non_pro_n = sum(1 for m in members if m["level"] != "pro")
+        pro_n = sum(1 for m in members if m["level"] == "pro")
+        has_pro = pro_n >= 1
+        viewer_lv = _user_level_for_subject(db, uid, sub)
+        if viewer_lv == "pro":
+            can_join = True
+            join_block = None
+            full = False
+        else:
+            slot_free = non_pro_n < CHAT_MAX_USERS
+            can_join = (you_in or (has_pro and slot_free))
+            if you_in:
+                join_block = None
+            elif not has_pro:
+                join_block = "need_pro"
+            elif not slot_free:
+                join_block = "full"
+            else:
+                join_block = None
+            full = not can_join
         rooms.append(
             {
                 "subject": sub,
                 "label": CHAT_SUBJECT_LABELS[sub],
-                "count": count,
+                "count": count_total,
+                "count_non_pro": non_pro_n,
+                "count_pro": pro_n,
+                "has_pro": has_pro,
                 "max": CHAT_MAX_USERS,
                 "full": full,
+                "can_join": can_join,
+                "join_block": join_block,
                 "you_in": you_in,
                 "appointment": appointment_row["appointment"] if appointment_row else None,
                 "members": [
@@ -679,10 +867,37 @@ def chat_appointment_get():
         "SELECT rating, comment FROM chat_ratings WHERE subject = ? AND user_id = ?",
         (subject, uid),
     ).fetchone()
-    rating_stats = db.execute(
-        "SELECT COUNT(*) AS count, AVG(rating) AS avg FROM chat_ratings WHERE subject = ?",
-        (subject,),
-    ).fetchone()
+    is_pro = _user_level_for_subject(db, uid, subject) == "pro"
+    rating_count = None
+    rating_avg = None
+    ratings = None
+    if is_pro:
+        rating_stats = db.execute(
+            "SELECT COUNT(*) AS count, AVG(rating) AS avg FROM chat_ratings WHERE subject = ?",
+            (subject,),
+        ).fetchone()
+        rating_count = int(rating_stats["count"])
+        rating_avg = (
+            float(rating_stats["avg"]) if rating_stats["avg"] is not None else None
+        )
+        rows = db.execute(
+            """
+            SELECT u.username AS username, r.rating AS rating, r.comment AS comment
+            FROM chat_ratings r
+            JOIN users u ON u.id = r.user_id
+            WHERE r.subject = ?
+            ORDER BY r.created_at ASC
+            """,
+            (subject,),
+        ).fetchall()
+        ratings = [
+            {
+                "username": r["username"],
+                "rating": int(r["rating"]),
+                "comment": (r["comment"] or "").strip(),
+            }
+            for r in rows
+        ]
     db.commit()
     return jsonify(
         appointment=row["appointment"],
@@ -693,8 +908,9 @@ def chat_appointment_get():
             "rating": your_rating["rating"],
             "comment": your_rating["comment"],
         } if your_rating else None,
-        rating_count=rating_stats["count"],
-        rating_avg=float(rating_stats["avg"]) if rating_stats["avg"] is not None else None,
+        rating_count=rating_count,
+        rating_avg=rating_avg,
+        ratings=ratings,
     )
 
 
@@ -786,6 +1002,8 @@ def chat_appointment_rate():
     if rating < 1 or rating > 5:
         return jsonify(error="invalid_rating"), 400
     comment = (data.get("comment") or "").strip()
+    if rating < 4 and not comment:
+        return jsonify(error="need_comment"), 400
     db = get_db()
     uid = session["user_id"]
     appointment = db.execute(
@@ -850,13 +1068,13 @@ def chat_join():
         db.commit()
         return jsonify(ok=True, you_in=True)
 
-    n = db.execute(
-        "SELECT COUNT(*) AS c FROM chat_presence WHERE subject = ?",
-        (subject,),
-    ).fetchone()["c"]
-    if n >= CHAT_MAX_USERS:
-        db.commit()
-        return jsonify(error="full", max=CHAT_MAX_USERS), 409
+    if lvl != "pro":
+        if _chat_presence_pro_count(db, subject) < 1:
+            db.commit()
+            return jsonify(error="need_pro"), 403
+        if _chat_presence_non_pro_count(db, subject) >= CHAT_MAX_USERS:
+            db.commit()
+            return jsonify(error="full", max=CHAT_MAX_USERS), 409
 
     db.execute(
         """
@@ -877,10 +1095,18 @@ def chat_leave():
     if not subject:
         return jsonify(error="invalid_subject"), 400
     db = get_db()
+    uid = session["user_id"]
+    prow = db.execute(
+        "SELECT level FROM chat_presence WHERE subject = ? AND user_id = ?",
+        (subject, uid),
+    ).fetchone()
+    was_pro = prow is not None and prow["level"] == "pro"
     db.execute(
         "DELETE FROM chat_presence WHERE subject = ? AND user_id = ?",
-        (subject, session["user_id"]),
+        (subject, uid),
     )
+    if was_pro:
+        _purge_chat_non_pros_if_no_pro(db, subject)
     db.commit()
     return jsonify(ok=True)
 
@@ -904,6 +1130,13 @@ def chat_messages():
     ).fetchone()
     if not in_room:
         return jsonify(error="not_in_room"), 403
+    if not _chat_may_use_room(db, uid, subject):
+        db.execute(
+            "DELETE FROM chat_presence WHERE subject = ? AND user_id = ?",
+            (subject, uid),
+        )
+        db.commit()
+        return jsonify(error="need_pro"), 403
 
     db.execute(
         """
@@ -959,6 +1192,13 @@ def chat_send():
     ).fetchone()
     if not in_room:
         return jsonify(error="not_in_room"), 403
+    if not _chat_may_use_room(db, uid, subject):
+        db.execute(
+            "DELETE FROM chat_presence WHERE subject = ? AND user_id = ?",
+            (subject, uid),
+        )
+        db.commit()
+        return jsonify(error="need_pro"), 403
 
     db.execute(
         """
@@ -1023,6 +1263,15 @@ def logout():
     return redirect("/login.html?flash=logout")
 
 
+def _valid_contact_email(raw):
+    s = (raw or "").strip()
+    if not s:
+        return None
+    if len(s) > 254 or "@" not in s or " " in s:
+        return None
+    return s
+
+
 @app.route("/profile", methods=["POST"])
 @login_required
 def profile_update():
@@ -1030,14 +1279,56 @@ def profile_update():
     if levels is None:
         return redirect("/settings.html?flash=levels")
     lg, lm, le = levels
+    raw_mail = (request.form.get("contact_email") or "").strip()
+    contact_email = _valid_contact_email(raw_mail)
+    if raw_mail and contact_email is None:
+        return redirect("/settings.html?flash=bad_contact_email")
+    want_notify = request.form.get("notify_laden_email") == "1"
+    if want_notify and not contact_email:
+        return redirect("/settings.html?flash=notify_no_email")
+    notify_val = 1 if (want_notify and contact_email) else 0
+    email_val = contact_email
+
+    cur_pwd = request.form.get("current_password") or ""
+    new_pwd = request.form.get("new_password") or ""
+    new_pwd2 = request.form.get("new_password_confirm") or ""
+    pwd_change = bool(cur_pwd or new_pwd or new_pwd2)
+    if pwd_change:
+        if not cur_pwd or not new_pwd or not new_pwd2:
+            return redirect("/settings.html?flash=pwd_incomplete")
+        if len(new_pwd) < 6:
+            return redirect("/settings.html?flash=shortpass")
+        if new_pwd != new_pwd2:
+            return redirect("/settings.html?flash=mismatch")
+
     db = get_db()
-    db.execute(
-        """
-        UPDATE users SET level_german = ?, level_math = ?, level_english = ?
-        WHERE id = ?
-        """,
-        (lg, lm, le, session["user_id"]),
-    )
+    uid = session["user_id"]
+    if pwd_change:
+        row = db.execute(
+            "SELECT password_hash FROM users WHERE id = ?",
+            (uid,),
+        ).fetchone()
+        if row is None or not check_password_hash(row["password_hash"], cur_pwd):
+            return redirect("/settings.html?flash=pwd_current_wrong")
+        new_hash = generate_password_hash(new_pwd)
+        db.execute(
+            """
+            UPDATE users SET level_german = ?, level_math = ?, level_english = ?,
+                contact_email = ?, notify_laden_email = ?,
+                password_hash = ?
+            WHERE id = ?
+            """,
+            (lg, lm, le, email_val, notify_val, new_hash, uid),
+        )
+    else:
+        db.execute(
+            """
+            UPDATE users SET level_german = ?, level_math = ?, level_english = ?,
+                contact_email = ?, notify_laden_email = ?
+            WHERE id = ?
+            """,
+            (lg, lm, le, email_val, notify_val, uid),
+        )
     db.commit()
     return redirect("/settings.html?flash=saved")
 
@@ -1049,7 +1340,8 @@ def api_me():
     db = get_db()
     row = db.execute(
         """
-        SELECT username, role, level_german, level_math, level_english
+        SELECT username, role, level_german, level_math, level_english,
+               contact_email, notify_laden_email
         FROM users WHERE id = ?
         """,
         (session["user_id"],),
@@ -1058,6 +1350,8 @@ def api_me():
         return jsonify({}), 401
     r = row["role"] if "role" in row.keys() else None
     role = r if r in ROLES else "user"
+    ce = row["contact_email"] if "contact_email" in row.keys() else None
+    nl = row["notify_laden_email"] if "notify_laden_email" in row.keys() else 0
     return jsonify(
         user_id=session["user_id"],
         username=row["username"],
@@ -1065,8 +1359,14 @@ def api_me():
         level_german=row["level_german"],
         level_math=row["level_math"],
         level_english=row["level_english"],
+        contact_email=ce or "",
+        notify_laden_email=bool(nl),
     )
 
+
+from shop import register_shop_routes
+
+register_shop_routes(app, get_db, admin_api, login_required, login_required_api)
 
 with app.app_context():
     init_db()

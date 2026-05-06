@@ -12,11 +12,13 @@
     <nav>
       <span id="nav-guest" class="hidden">
         <a href="/login.html">Login</a>
+        <a href="/laden.html" class="btn btn-small btn-secondary">Laden</a>
         <a href="/einladung.html" class="btn btn-small btn-secondary">Einladungscode</a>
       </span>
       <span id="nav-user" style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
         <span class="nav-user" id="nav-username"></span>
         <a href="/dashboard.html" class="btn btn-small">Dashboard</a>
+        <a href="/laden.html" class="btn btn-small btn-secondary">Laden</a>
         <a href="/chat.html" class="btn btn-small btn-secondary">Chat</a>
         <a href="/settings.html" class="btn btn-small btn-secondary">Einstellungen</a>
         <a href="/admin.html" id="nav-admin" class="btn btn-small hidden">Admin</a>
@@ -31,7 +33,7 @@
     <ul id="flash-banner"></ul>
     <section class="card">
       <h1>Einstellungen</h1>
-      <p class="field-hint">Pro · Mittel · Noob. Änderungen mit „Speichern“ übernehmen.</p>
+      <p class="field-hint">Pro · Mittel · Noob. Passwort unten nur ausfüllen, wenn du es ändern willst. Änderungen mit „Speichern“ übernehmen.</p>
 
       <form method="post" action="/profile" class="stack-form">
         <fieldset class="subject-levels subject-levels-plain">
@@ -60,6 +62,37 @@
             </div>
           </div>
         </fieldset>
+
+        <fieldset class="subject-levels subject-levels-plain" style="margin-top:1.25rem;">
+          <legend>Passwort ändern</legend>
+          <p class="field-hint">Felder leer lassen, wenn du dein Passwort nicht ändern willst.</p>
+          <label>
+            Aktuelles Passwort
+            <input name="current_password" type="password" autocomplete="current-password" maxlength="200">
+          </label>
+          <label>
+            Neues Passwort
+            <input name="new_password" type="password" autocomplete="new-password" maxlength="200">
+          </label>
+          <label>
+            Neues Passwort wiederholen
+            <input name="new_password_confirm" type="password" autocomplete="new-password" maxlength="200">
+          </label>
+        </fieldset>
+
+        <fieldset class="subject-levels subject-levels-plain" style="margin-top:1.25rem;">
+          <legend>E-Mail (Lehrkräfte)</legend>
+          <p class="field-hint">Trage hier deine E-Mail ein, wenn du Benachrichtigungen zu <strong>Laden-Käufen</strong> (Schüler/innen lösen Punkte ein) erhalten möchtest.</p>
+          <label>
+            E-Mail-Adresse
+            <input id="settings-contact-email" name="contact_email" type="email" maxlength="254" autocomplete="email" placeholder="name@schule.de">
+          </label>
+          <label class="check-row">
+            <input type="checkbox" name="notify_laden_email" id="settings-notify-laden" value="1">
+            <span>Ja, mich bei Laden-Käufen an diese Adresse per E-Mail informieren</span>
+          </label>
+        </fieldset>
+
         <button type="submit" class="btn btn-block">Speichern</button>
       </form>
 
@@ -97,6 +130,10 @@
           if (adm) adm.classList.remove("hidden");
         }
         setRadios(data);
+        var em = document.getElementById("settings-contact-email");
+        if (em && data.contact_email) em.value = data.contact_email;
+        var n = document.getElementById("settings-notify-laden");
+        if (n) n.checked = !!data.notify_laden_email;
       });
   </script>
 </body>

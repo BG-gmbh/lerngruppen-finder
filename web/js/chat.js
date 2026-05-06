@@ -69,7 +69,8 @@
     host.innerHTML = "";
     rooms.forEach(function (room) {
       var card = document.createElement("article");
-      card.className = "room-card" + (room.full ? " room-card-full" : "");
+      card.className =
+        "room-card" + (room.full || room.can_join === false ? " room-card-full" : "");
 
       var h = document.createElement("h3");
       h.textContent = room.label;
@@ -77,8 +78,21 @@
 
       var meta = document.createElement("p");
       meta.className = "room-meta";
+      var np =
+        room.count_non_pro != null ? room.count_non_pro : room.count || 0;
+      var total = room.count != null ? room.count : 0;
+      var extra = total > np ? " · " + total + " online (inkl. Pro)" : "";
       meta.textContent =
-        room.count + " / " + room.max + " online" + (room.full ? " (voll)" : "");
+        np +
+        " / " +
+        (room.max || 5) +
+        " ohne Pro" +
+        extra +
+        (room.has_pro === false && total > 0
+          ? " — noch kein Pro online"
+          : room.has_pro === false
+            ? " — mind. 1× Pro nötig für Beitritt"
+            : "");
       card.appendChild(meta);
 
       var ul = document.createElement("ul");
@@ -103,6 +117,14 @@
       btn.className = "btn btn-block";
       if (room.you_in) {
         btn.textContent = "Chat fortsetzen";
+      } else if (room.can_join === false) {
+        btn.textContent =
+          room.join_block === "full"
+            ? "Raum voll"
+            : room.join_block === "need_pro"
+              ? "Warte auf Pro"
+              : "Beitreten nicht möglich";
+        btn.disabled = true;
       } else if (room.full) {
         btn.textContent = "Raum voll";
         btn.disabled = true;
@@ -175,7 +197,13 @@
     api("/api/chat/messages" + q, { method: "GET" }).then(function (res) {
       if (res.status === 403) {
         leaveRoomUi(true);
-        setLobbyError("Du warst nicht mehr im Raum. Bitte erneut beitreten.");
+        if (res.data && res.data.error === "need_pro") {
+          setLobbyError(
+            "Im Raum ist gerade kein Pro online. Ohne mindestens einen Pro kann der Chat nicht genutzt werden."
+          );
+        } else {
+          setLobbyError("Du warst nicht mehr im Raum. Bitte erneut beitreten.");
+        }
         return;
       }
       if (!res.ok || !res.data.messages) {
@@ -190,7 +218,14 @@
     setLobbyError("");
     api("/api/chat/join", { method: "POST", body: { subject: subject } }).then(function (res) {
       if (res.status === 409) {
-        setLobbyError("Dieser Raum ist voll (" + maxUsers + " Nutzer). Versuch es gleich nochmal.");
+        setLobbyError("Dieser Raum ist voll (" + maxUsers + " Plätze ohne Pro). Versuch es gleich nochmal.");
+        loadRooms();
+        return;
+      }
+      if (res.status === 403 && res.data && res.data.error === "need_pro") {
+        setLobbyError(
+          "Beitreten nicht möglich: Es muss schon mindestens ein Pro im Raum sein. Bitte warten oder selbst als Pro beitreten."
+        );
         loadRooms();
         return;
       }
@@ -252,6 +287,12 @@
     }).then(function (res) {
       if (!res.ok) {
         input.value = body;
+        if (res.status === 403 && res.data && res.data.error === "need_pro") {
+          leaveRoomUi(true);
+          setLobbyError(
+            "Es ist kein Pro mehr im Raum. Der Chat ist für dich vorerst beendet — bitte erneut beitreten, wenn ein Pro da ist."
+          );
+        }
         return;
       }
       fetchMessages();
@@ -278,11 +319,18 @@
         c: data.your_rating.comment || "",
       };
     }
+    var rid = null;
+    if (hasProRight && data && data.ended && data.ratings) {
+      rid = data.ratings.map(function (x) {
+        return [x.username, x.rating, x.comment || ""];
+      });
+    }
     return JSON.stringify({
       appointment: data && data.appointment ? data.appointment : null,
       ended: !!(data && data.ended),
       yr: yr,
       pro: !!hasProRight,
+      rid: rid,
     });
   }
 
@@ -323,10 +371,16 @@
     var stableKey = stableAppointmentKey(data, hasProRight);
     if (stableKey === lastAppointmentUiKey) {
       var statsEl = $("chat-rating-stats");
-      if (statsEl && data && data.ended) {
+      if (
+        statsEl &&
+        data &&
+        data.ended &&
+        hasProRight &&
+        data.rating_count != null
+      ) {
         statsEl.textContent =
           "Bewertungen: " +
-          (data.rating_count || 0) +
+          data.rating_count +
           (data.rating_avg != null ? " (Ø " + data.rating_avg.toFixed(1) + ")" : "");
       }
       return;
@@ -335,18 +389,24 @@
 
     if (data && data.ended) {
       content += '<p class="chat-appointment-text"><strong>Termin beendet.</strong></p>';
-      content +=
-        '<p class="chat-appointment-text muted" id="chat-rating-stats">Bewertungen: ' +
-        (data.rating_count || 0) +
-        (data.rating_avg != null ? " (Ø " + data.rating_avg.toFixed(1) + ")" : "") +
-        "</p>";
+      if (hasProRight && data.rating_count != null) {
+        content +=
+          '<p class="chat-appointment-text muted" id="chat-rating-stats">Bewertungen: ' +
+          data.rating_count +
+          (data.rating_avg != null ? " (Ø " + data.rating_avg.toFixed(1) + ")" : "") +
+          "</p>";
+        content += '<ul class="chat-ratings-pro-list" id="chat-ratings-pro-list"></ul>';
+      } else {
+        content +=
+          '<p class="chat-appointment-text muted" id="chat-rating-private-note">Die Übersicht und alle Bewertungs-Kommentare siehst du nur als <strong>Pro</strong> in diesem Fach.</p>';
+      }
       content +=
         '<div class="chat-rating-box">' +
         '<label for="rating-value">Bewertung (1–5):</label>' +
         '<select id="rating-value" class="chat-rating-input">' +
         ratingSelectOptions(data.your_rating) +
         "</select>" +
-        '<label for="rating-comment">Kommentar (optional):</label>' +
+        '<label for="rating-comment">Kommentar <span id="rating-comment-hint" class="muted"></span></label>' +
         '<textarea id="rating-comment" class="chat-rating-textarea" rows="3" placeholder="Wie war das Treffen?"></textarea>' +
         '<button type="button" class="btn btn-secondary btn-small" id="btn-submit-rating">Bewertung speichern</button>' +
         "</div>";
@@ -363,9 +423,52 @@
 
     container.innerHTML = content;
 
+    var listUl = $("chat-ratings-pro-list");
+    if (listUl && data && data.ratings) {
+      listUl.innerHTML = "";
+      if (!data.ratings.length) {
+        var li0 = document.createElement("li");
+        li0.className = "muted";
+        li0.textContent = "Noch keine Bewertungen.";
+        listUl.appendChild(li0);
+      } else {
+        data.ratings.forEach(function (rv) {
+          var li = document.createElement("li");
+          var strong = document.createElement("strong");
+          strong.textContent = rv.username;
+          li.appendChild(strong);
+          var mid = document.createTextNode(" — " + rv.rating + "/5");
+          li.appendChild(mid);
+          if (rv.comment) {
+            var span = document.createElement("span");
+            span.className = "muted";
+            span.textContent = " — " + rv.comment;
+            li.appendChild(span);
+          }
+          listUl.appendChild(li);
+        });
+      }
+    }
+
     var ta = $("rating-comment");
     if (ta && data && data.your_rating && data.your_rating.comment) {
       ta.value = data.your_rating.comment;
+    }
+
+    function updateRatingCommentHint() {
+      var sel = $("rating-value");
+      var hint = $("rating-comment-hint");
+      if (!sel || !hint) return;
+      var r = parseInt(sel.value, 10);
+      var need = r >= 1 && r < 4;
+      hint.textContent = need
+        ? "(Pflicht bei 1–3 Sternen)"
+        : "(optional bei 4–5 Sternen)";
+    }
+    var selRate = $("rating-value");
+    if (selRate) {
+      selRate.addEventListener("change", updateRatingCommentHint);
+      updateRatingCommentHint();
     }
 
     var setBtn = $("btn-set-appointment");
@@ -433,7 +536,11 @@
   function submitRating() {
     if (!currentSubject) return;
     var rating = parseInt($("rating-value").value, 10);
-    var comment = $("rating-comment").value || "";
+    var comment = ($("rating-comment").value || "").trim();
+    if (rating >= 1 && rating < 4 && !comment) {
+      setLobbyError("Bei weniger als 4 Sternen bitte einen Kommentar eintragen.");
+      return;
+    }
     api("/api/chat/appointment/rate", {
       method: "POST",
       body: {
@@ -443,7 +550,11 @@
       },
     }).then(function (res) {
       if (!res.ok) {
-        setLobbyError("Bewertung konnte nicht gespeichert werden.");
+        if (res.data && res.data.error === "need_comment") {
+          setLobbyError("Bei weniger als 4 Sternen ist ein Kommentar verpflichtend.");
+        } else {
+          setLobbyError("Bewertung konnte nicht gespeichert werden.");
+        }
         return;
       }
       loadAppointment();

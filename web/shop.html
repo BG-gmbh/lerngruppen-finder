@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Laden — lerngruppen finder</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="logo" href="/">lerngruppen finder</a>
+    <nav>
+      <span id="nav-guest" class="hidden">
+        <a href="/login.html">Login</a>
+        <a href="/laden.html" class="btn btn-small btn-secondary">Laden</a>
+        <a href="/einladung.html" class="btn btn-small btn-secondary">Einladungscode</a>
+      </span>
+      <span id="nav-user" style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+        <span class="nav-user" id="nav-username"></span>
+        <a href="/dashboard.html" class="btn btn-small btn-secondary">Dashboard</a>
+        <a href="/laden.html" class="btn btn-small">Laden</a>
+        <a href="/chat.html" class="btn btn-small btn-secondary">Chat</a>
+        <a href="/settings.html" class="btn btn-small btn-secondary">Einstellungen</a>
+        <a href="/admin.html" id="nav-admin" class="btn btn-small hidden">Admin</a>
+        <form class="inline-form" action="/logout" method="post">
+          <button type="submit" class="btn btn-ghost">Logout</button>
+        </form>
+      </span>
+    </nav>
+  </header>
+
+  <main class="container container-wide">
+    <ul id="flash-banner"></ul>
+    <h1 class="page-title">Laden</h1>
+    <p class="muted" style="margin-bottom:0.75rem;">
+      Angebote und Materialien im Laden (vom Team gepflegt). Bei Fragen nutze den Fach-Chat.
+    </p>
+    <p id="shop-balance-line" class="shop-balance-line muted" style="margin-bottom:1rem;"></p>
+    <div id="shop-list" class="shop-grid"></div>
+    <p id="shop-empty" class="muted hidden">Aktuell keine Einträge.</p>
+  </main>
+
+  <script src="/js/flash.js"></script>
+  <script src="/js/nav.js"></script>
+  <script>
+    (function () {
+      function esc(s) {
+        if (s == null) return "";
+        var d = document.createElement("div");
+        d.textContent = s;
+        return d.innerHTML;
+      }
+
+      fetch("/api/shop", { credentials: "same-origin" })
+        .then(function (r) {
+          if (r.status === 401) {
+            window.location.href =
+              "/login.html?flash=needlogin&next=" + encodeURIComponent("/laden.html");
+            return null;
+          }
+          return r.json();
+        })
+        .then(function (data) {
+          var balEl = document.getElementById("shop-balance-line");
+          if (balEl) {
+            var bal = data && data.points_balance != null ? data.points_balance : 0;
+            var smtp = data && data.smtp_configured;
+            balEl.textContent =
+              "Deine Punkte (Summe aus den Fach-Bewertungen der Admins): " +
+              bal +
+              "." +
+              (smtp
+                ? " E-Mail-Benachrichtigung an Lehrer ist auf dem Server eingerichtet."
+                : " Hinweis: Ohne SMTP auf dem Server erhalten Lehrer keine automatische E-Mail.");
+          }
+          var host = document.getElementById("shop-list");
+          var empty = document.getElementById("shop-empty");
+          if (!data || !data.items || !data.items.length) {
+            host.innerHTML = "";
+            empty.classList.remove("hidden");
+            return;
+          }
+          empty.classList.add("hidden");
+          host.innerHTML = "";
+          data.items.forEach(function (it) {
+            var card = document.createElement("article");
+            card.className = "card shop-card";
+            var cost = it.points_price != null ? parseInt(it.points_price, 10) : 0;
+            card.innerHTML =
+              "<h2 class=\"card-title\">" +
+              esc(it.title) +
+              "</h2>" +
+              (it.price_hint
+                ? "<p class=\"shop-price\">" + esc(it.price_hint) + "</p>"
+                : "") +
+              (cost > 0
+                ? "<p class=\"muted shop-points-hint\">Punktepreis: " + cost + "</p>"
+                : "") +
+              "<div class=\"shop-desc\">" +
+              esc(it.description).replace(/\n/g, "<br>") +
+              "</div>";
+            if (cost > 0) {
+              var pAct = document.createElement("p");
+              pAct.className = "shop-actions";
+              var buy = document.createElement("button");
+              buy.type = "button";
+              buy.className = "btn btn-secondary btn-small";
+              buy.textContent = "Mit " + cost + " Punkten einlösen";
+              buy.addEventListener("click", function () {
+                if (
+                  !window.confirm(
+                    "Wirklich " + cost + " Punkte für „" + it.title + "“ ausgeben?"
+                  )
+                ) {
+                  return;
+                }
+                fetch("/api/shop/purchase", {
+                  method: "POST",
+                  credentials: "same-origin",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ item_id: it.id }),
+                })
+                  .then(function (r) {
+                    return r.json().then(function (d) {
+                      return { ok: r.ok, status: r.status, d: d };
+                    });
+                  })
+                  .then(function (x) {
+                    if (!x.ok) {
+                      if (x.d && x.d.error === "insufficient_points") {
+                        window.alert(
+                          "Nicht genug Punkte. Du hast " +
+                            (x.d.balance != null ? x.d.balance : "?") +
+                            ", benötigt werden " +
+                            (x.d.cost != null ? x.d.cost : cost) +
+                            "."
+                        );
+                      } else {
+                        window.alert(
+                          x.d && x.d.error ? "Fehler: " + x.d.error : "Einlösen fehlgeschlagen."
+                        );
+                      }
+                      return;
+                    }
+                    var msg =
+                      "Einlösen gespeichert. Neue Punkte: " +
+                      (x.d.points_balance != null ? x.d.points_balance : "");
+                    if (x.d.mail_sent) {
+                      msg += " Lehrer wurden per E-Mail informiert.";
+                    } else if (x.d.mail_notice) {
+                      msg += " " + x.d.mail_notice;
+                    } else if (x.d.mail_error) {
+                      msg += " " + x.d.mail_error;
+                    }
+                    window.alert(msg);
+                    window.location.reload();
+                  });
+              });
+              pAct.appendChild(buy);
+              card.appendChild(pAct);
+            }
+            host.appendChild(card);
+          });
+        });
+    })();
+  </script>
+</body>
+</html>
