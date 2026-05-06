@@ -103,6 +103,9 @@ def init_db():
         _ensure_banned_column(db)
         _ensure_chat_tables(db)
         _ensure_invite_codes(db)
+        from shop import ensure_shop_table
+
+        ensure_shop_table(db)
 
 
 def _ensure_role_column(db):
@@ -679,10 +682,37 @@ def chat_appointment_get():
         "SELECT rating, comment FROM chat_ratings WHERE subject = ? AND user_id = ?",
         (subject, uid),
     ).fetchone()
-    rating_stats = db.execute(
-        "SELECT COUNT(*) AS count, AVG(rating) AS avg FROM chat_ratings WHERE subject = ?",
-        (subject,),
-    ).fetchone()
+    is_pro = _user_level_for_subject(db, uid, subject) == "pro"
+    rating_count = None
+    rating_avg = None
+    ratings = None
+    if is_pro:
+        rating_stats = db.execute(
+            "SELECT COUNT(*) AS count, AVG(rating) AS avg FROM chat_ratings WHERE subject = ?",
+            (subject,),
+        ).fetchone()
+        rating_count = int(rating_stats["count"])
+        rating_avg = (
+            float(rating_stats["avg"]) if rating_stats["avg"] is not None else None
+        )
+        rows = db.execute(
+            """
+            SELECT u.username AS username, r.rating AS rating, r.comment AS comment
+            FROM chat_ratings r
+            JOIN users u ON u.id = r.user_id
+            WHERE r.subject = ?
+            ORDER BY r.created_at ASC
+            """,
+            (subject,),
+        ).fetchall()
+        ratings = [
+            {
+                "username": r["username"],
+                "rating": int(r["rating"]),
+                "comment": (r["comment"] or "").strip(),
+            }
+            for r in rows
+        ]
     db.commit()
     return jsonify(
         appointment=row["appointment"],
@@ -693,8 +723,9 @@ def chat_appointment_get():
             "rating": your_rating["rating"],
             "comment": your_rating["comment"],
         } if your_rating else None,
-        rating_count=rating_stats["count"],
-        rating_avg=float(rating_stats["avg"]) if rating_stats["avg"] is not None else None,
+        rating_count=rating_count,
+        rating_avg=rating_avg,
+        ratings=ratings,
     )
 
 
@@ -786,6 +817,8 @@ def chat_appointment_rate():
     if rating < 1 or rating > 5:
         return jsonify(error="invalid_rating"), 400
     comment = (data.get("comment") or "").strip()
+    if rating < 4 and not comment:
+        return jsonify(error="need_comment"), 400
     db = get_db()
     uid = session["user_id"]
     appointment = db.execute(
@@ -1067,6 +1100,10 @@ def api_me():
         level_english=row["level_english"],
     )
 
+
+from shop import register_shop_routes
+
+register_shop_routes(app, get_db, admin_api, login_required, login_required_api)
 
 with app.app_context():
     init_db()

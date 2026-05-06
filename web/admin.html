@@ -30,6 +30,7 @@
       <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="users">Nutzer verwalten</button>
       <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="chats">Chats verwalten</button>
       <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="codes">Einladungs-Codes</button>
+      <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="shop">Shop</button>
     </div>
 
     <section class="card tab-panel is-active" id="tab-accounts" role="tabpanel">
@@ -84,6 +85,12 @@
       </form>
     </section>
 
+    <section class="card tab-panel hidden" id="tab-chats" role="tabpanel">
+      <h2 class="card-title">Chats verwalten</h2>
+      <p class="field-hint">Nachrichten, Termine und Bewertungen eines Fachs löschen (Nutzerkonten bleiben).</p>
+      <ul id="chat-admin-list" class="code-list"></ul>
+    </section>
+
     <section class="card tab-panel hidden" id="tab-users" role="tabpanel">
       <h2 class="card-title">Nutzer verwalten</h2>
       <p class="field-hint">Hier siehst du alle Konten. Du kannst Nutzer sperren oder entsperren.</p>
@@ -98,6 +105,42 @@
       <h3 class="subsection-title">Ungenutzte Codes</h3>
       <ul id="code-list" class="code-list"></ul>
     </section>
+
+    <section class="card tab-panel hidden" id="tab-shop" role="tabpanel">
+      <h2 class="card-title">Shop-Einträge</h2>
+      <p class="field-hint">Einträge erscheinen für eingeloggte Nutzer unter <a href="/shop.html">Shop</a>. Nur aktive Einträge sind sichtbar.</p>
+
+      <form id="shop-form" class="stack-form">
+        <input type="hidden" id="shop-edit-id" value="">
+        <label>
+          Titel
+          <input id="shop-title" type="text" required maxlength="200" autocomplete="off">
+        </label>
+        <label>
+          Beschreibung
+          <textarea id="shop-description" rows="4" maxlength="4000" placeholder="Details, Links als Klartext …"></textarea>
+        </label>
+        <label>
+          Preis / Hinweis (optional)
+          <input id="shop-price" type="text" maxlength="120" placeholder="z. B. kostenlos, 2 € Spende …" autocomplete="off">
+        </label>
+        <label>
+          Sortierung (kleinere Zahl zuerst)
+          <input id="shop-sort" type="number" value="0" step="1">
+        </label>
+        <label class="check-row">
+          <input id="shop-active" type="checkbox" checked>
+          <span>Aktiv (sichtbar im Shop)</span>
+        </label>
+        <div class="admin-shop-toolbar">
+          <button type="submit" class="btn" id="shop-save-btn">Speichern</button>
+          <button type="button" class="btn btn-secondary" id="shop-new-btn">Neuer Eintrag</button>
+        </div>
+      </form>
+
+      <h3 class="subsection-title">Alle Einträge</h3>
+      <ul id="shop-list" class="code-list"></ul>
+    </section>
   </main>
 
   <script src="/js/flash.js"></script>
@@ -106,8 +149,10 @@
       var buttons = document.querySelectorAll(".tab-btn");
       var panels = {
         accounts: document.getElementById("tab-accounts"),
+        chats: document.getElementById("tab-chats"),
         users: document.getElementById("tab-users"),
         codes: document.getElementById("tab-codes"),
+        shop: document.getElementById("tab-shop"),
       };
 
       function renderUsers(data) {
@@ -183,6 +228,12 @@
           if (key === "users") {
             loadUsers();
           }
+          if (key === "chats") {
+            loadChats();
+          }
+          if (key === "shop") {
+            loadShop();
+          }
         });
       });
 
@@ -245,6 +296,196 @@
         }
       });
 
+      function loadChats() {
+        fetch("/api/admin/chats", { credentials: "same-origin" })
+          .then(function (r) {
+            if (r.status === 401 || r.status === 403) return null;
+            return r.json();
+          })
+          .then(function (data) {
+            var ul = document.getElementById("chat-admin-list");
+            if (!ul) return;
+            ul.innerHTML = "";
+            if (!data || !data.chats || !data.chats.length) {
+              var li0 = document.createElement("li");
+              li0.textContent = "Keine Daten.";
+              li0.className = "muted";
+              ul.appendChild(li0);
+              return;
+            }
+            data.chats.forEach(function (c) {
+              var li = document.createElement("li");
+              var span = document.createElement("span");
+              span.textContent =
+                c.label + " — " + c.message_count + " Nachricht(en)";
+              li.appendChild(span);
+              var del = document.createElement("button");
+              del.type = "button";
+              del.className = "btn btn-small btn-secondary";
+              del.style.marginLeft = "0.75rem";
+              del.textContent = "Chat leeren";
+              del.addEventListener("click", function () {
+                if (
+                  !window.confirm(
+                    "Alle Nachrichten und Termin-Daten für " +
+                      c.label +
+                      " wirklich löschen?"
+                  )
+                ) {
+                  return;
+                }
+                fetch("/api/admin/delete_chat/" + encodeURIComponent(c.subject), {
+                  method: "DELETE",
+                  credentials: "same-origin",
+                })
+                  .then(function (r) {
+                    return r.json().then(function (d) {
+                      return { ok: r.ok, d: d };
+                    });
+                  })
+                  .then(function (x) {
+                    if (!x.ok) {
+                      window.alert("Löschen fehlgeschlagen.");
+                      return;
+                    }
+                    loadChats();
+                  });
+              });
+              li.appendChild(del);
+              ul.appendChild(li);
+            });
+          });
+      }
+
+      function resetShopForm() {
+        document.getElementById("shop-edit-id").value = "";
+        document.getElementById("shop-title").value = "";
+        document.getElementById("shop-description").value = "";
+        document.getElementById("shop-price").value = "";
+        document.getElementById("shop-sort").value = "0";
+        document.getElementById("shop-active").checked = true;
+        document.getElementById("shop-save-btn").textContent = "Anlegen";
+      }
+
+      function fillShopForm(it) {
+        document.getElementById("shop-edit-id").value = String(it.id);
+        document.getElementById("shop-title").value = it.title || "";
+        document.getElementById("shop-description").value = it.description || "";
+        document.getElementById("shop-price").value = it.price_hint || "";
+        document.getElementById("shop-sort").value = String(it.sort_order != null ? it.sort_order : 0);
+        document.getElementById("shop-active").checked = !!it.active;
+        document.getElementById("shop-save-btn").textContent = "Aktualisieren";
+      }
+
+      function loadShop() {
+        fetch("/api/admin/shop", { credentials: "same-origin" })
+          .then(function (r) {
+            if (r.status === 401 || r.status === 403) return null;
+            return r.json();
+          })
+          .then(function (data) {
+            var ul = document.getElementById("shop-list");
+            if (!ul) return;
+            ul.innerHTML = "";
+            if (!data || !data.items || !data.items.length) {
+              var li0 = document.createElement("li");
+              li0.textContent = "Noch keine Shop-Einträge.";
+              li0.className = "muted";
+              ul.appendChild(li0);
+              return;
+            }
+            data.items.forEach(function (it) {
+              var li = document.createElement("li");
+              var info = document.createElement("span");
+              info.textContent =
+                (it.active ? "" : "[inaktiv] ") +
+                it.title +
+                (it.price_hint ? " — " + it.price_hint : "");
+              li.appendChild(info);
+              var edit = document.createElement("button");
+              edit.type = "button";
+              edit.className = "btn btn-small";
+              edit.style.marginLeft = "0.75rem";
+              edit.textContent = "Bearbeiten";
+              edit.addEventListener("click", function () {
+                fillShopForm(it);
+                document.getElementById("shop-title").focus();
+              });
+              li.appendChild(edit);
+              var del = document.createElement("button");
+              del.type = "button";
+              del.className = "btn btn-small btn-secondary";
+              del.style.marginLeft = "0.5rem";
+              del.textContent = "Löschen";
+              del.addEventListener("click", function () {
+                if (!window.confirm("Eintrag wirklich löschen?")) return;
+                fetch("/api/admin/shop/" + it.id, {
+                  method: "DELETE",
+                  credentials: "same-origin",
+                })
+                  .then(function (r) {
+                    return r.json().then(function (d) {
+                      return { ok: r.ok, d: d };
+                    });
+                  })
+                  .then(function (x) {
+                    if (!x.ok) {
+                      window.alert("Löschen fehlgeschlagen.");
+                      return;
+                    }
+                    resetShopForm();
+                    loadShop();
+                  });
+              });
+              li.appendChild(del);
+              ul.appendChild(li);
+            });
+          });
+      }
+
+      document.getElementById("shop-new-btn").addEventListener("click", function () {
+        resetShopForm();
+        document.getElementById("shop-title").focus();
+      });
+
+      document.getElementById("shop-form").addEventListener("submit", function (e) {
+        e.preventDefault();
+        var id = document.getElementById("shop-edit-id").value.trim();
+        var body = {
+          title: document.getElementById("shop-title").value.trim(),
+          description: document.getElementById("shop-description").value.trim(),
+          price_hint: document.getElementById("shop-price").value.trim(),
+          sort_order: parseInt(document.getElementById("shop-sort").value, 10) || 0,
+          active: document.getElementById("shop-active").checked,
+        };
+        var url = "/api/admin/shop";
+        var method = "POST";
+        if (id) {
+          url = "/api/admin/shop/" + encodeURIComponent(id);
+          method = "PUT";
+        }
+        fetch(url, {
+          method: method,
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        })
+          .then(function (r) {
+            return r.json().then(function (d) {
+              return { ok: r.ok, d: d };
+            });
+          })
+          .then(function (x) {
+            if (!x.ok) {
+              window.alert(x.d && x.d.error ? "Fehler: " + x.d.error : "Speichern fehlgeschlagen.");
+              return;
+            }
+            resetShopForm();
+            loadShop();
+          });
+      });
+
+      resetShopForm();
       loadCodes();
     })();
   </script>

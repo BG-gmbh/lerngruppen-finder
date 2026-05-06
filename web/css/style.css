@@ -469,6 +469,18 @@ a:hover {
   min-height: 5rem;
 }
 
+.chat-ratings-pro-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+}
+
+.chat-ratings-pro-list li {
+  padding: 0.35rem 0;
+  border-bottom: 1px solid #2a3544;
+}
+
 .chat-appointment {
   border: 1px solid #2a3544;
   border-radius: 8px;
@@ -587,4 +599,30 @@ a:hover {
   width: 1.1rem;
   height: 1.1rem;
   accent-color: var(--accent);
+}
+
+.shop-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+.shop-card .shop-price {
+  color: var(--success);
+  font-weight: 600;
+  margin: 0 0 0.75rem;
+}
+
+.shop-card .shop-desc {
+  color: var(--muted);
+  font-size: 0.95rem;
+  white-space: pre-wrap;
+}
+
+.admin-shop-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 1rem;
 }
