@@ -6,6 +6,7 @@
   var roomsTimer = null;
   var msgTimer = null;
   var maxUsers = 5;
+  var userLevels = null;
 
   function $(id) {
     return document.getElementById(id);
@@ -80,6 +81,12 @@
         ul.appendChild(li);
       });
       card.appendChild(ul);
+      if (room.appointment) {
+        var app = document.createElement("p");
+        app.className = "room-appointment";
+        app.textContent = "Termin: " + room.appointment;
+        card.appendChild(app);
+      }
 
       var btn = document.createElement("button");
       btn.type = "button";
@@ -181,6 +188,7 @@
       stopRoomsPoll();
       stopMsgPoll();
       fetchMessages();
+      loadAppointment();
       msgTimer = setInterval(fetchMessages, POLL_MSG_MS);
       $("chat-input").focus();
     });
@@ -225,6 +233,95 @@
     });
   }
 
+  function updateAppointmentUi(data) {
+    var container = $("chat-appointment");
+    if (!container) return;
+    var content = "";
+    if (data && data.appointment) {
+      content +=
+        '<p class="chat-appointment-text"><strong>Termin:</strong> ' +
+        esc(data.appointment) +
+        "</p>";
+    } else {
+      content += '<p class="chat-appointment-text">Kein Termin gesetzt.</p>';
+    }
+    if (
+      currentSubject &&
+      userLevels &&
+      userLevels["level_" + currentSubject] === "pro"
+    ) {
+      content +=
+        '<button type="button" class="btn btn-secondary btn-small" id="btn-set-appointment">Termin festlegen</button>';
+    }
+    container.innerHTML = content;
+    var btn = $("btn-set-appointment");
+    if (btn) {
+      btn.addEventListener("click", setAppointment);
+    }
+  }
+
+  function loadAppointment() {
+    if (!currentSubject) return;
+    api("/api/chat/appointment?subject=" + encodeURIComponent(currentSubject), {
+      method: "GET",
+    }).then(function (res) {
+      if (!res.ok || !res.data) return;
+      updateAppointmentUi(res.data);
+    });
+  }
+
+  function setAppointment() {
+    if (!currentSubject) return;
+    var appointment = prompt(
+      "Gib den Termin ein (Ort, Datum und Uhrzeit):",
+      ""
+    );
+    if (appointment === null) return;
+    appointment = (appointment || "").trim();
+    if (!appointment) {
+      setLobbyError("Termin darf nicht leer sein.");
+      return;
+    }
+    api("/api/chat/appointment", {
+      method: "POST",
+      body: { subject: currentSubject, appointment: appointment },
+    }).then(function (res) {
+      if (!res.ok) {
+        setLobbyError("Termin speichern fehlgeschlagen.");
+        return;
+      }
+      loadAppointment();
+    });
+  }
+
+  function showCreateRoomButton() {
+    if (!userLevels) return;
+    var proSubjects = [];
+    if (userLevels.level_german === "pro") proSubjects.push("german");
+    if (userLevels.level_math === "pro") proSubjects.push("math");
+    if (userLevels.level_english === "pro") proSubjects.push("english");
+    var btn = $("btn-create-room");
+    if (!btn) return;
+    btn.style.display = proSubjects.length ? "inline-flex" : "none";
+  }
+
+  function chooseProSubject() {
+    var choices = [];
+    if (userLevels.level_german === "pro") choices.push("Deutsch|german");
+    if (userLevels.level_math === "pro") choices.push("Mathe|math");
+    if (userLevels.level_english === "pro") choices.push("Englisch|english");
+    if (!choices.length) return null;
+    if (choices.length === 1) return choices[0].split("|")[1];
+    var text = "Wähle ein Fach:\n" + choices.map(function (c, idx) {
+      return (idx + 1) + ". " + c.split("|")[0];
+    }).join("\n") + "\nGib die Zahl ein.";
+    var choice = prompt(text);
+    if (!choice) return null;
+    var idx = parseInt(choice, 10) - 1;
+    if (idx < 0 || idx >= choices.length) return null;
+    return choices[idx].split("|")[1];
+  }
+
   function bindNavName() {
     return fetch("/api/me", { credentials: "same-origin" }).then(function (r) {
       if (r.status === 401) {
@@ -235,14 +332,25 @@
     }).then(function (data) {
       if (!data || !data.username) return;
       window.__uid = data.user_id;
+      userLevels = data;
       var nav = $("nav-username");
       if (nav) nav.textContent = data.username;
       if (data.role === "admin") {
         var adm = $("nav-admin");
         if (adm) adm.classList.remove("hidden");
       }
+      showCreateRoomButton();
     });
   }
+
+  $("btn-create-room").addEventListener("click", function () {
+    var subject = chooseProSubject();
+    if (!subject) {
+      setLobbyError("Wähle zuerst ein Pro-Fach aus, um einen Raum zu erstellen.");
+      return;
+    }
+    openSubject(subject);
+  });
 
   $("btn-leave").addEventListener("click", function () {
     leaveRoomNetwork();

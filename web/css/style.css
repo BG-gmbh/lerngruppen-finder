@@ -445,6 +445,24 @@ a:hover {
   word-break: break-word;
 }
 
+.chat-appointment {
+  border: 1px solid #2a3544;
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+  background: rgba(42, 53, 68, 0.12);
+}
+
+.chat-appointment-text {
+  margin: 0 0 0.5rem;
+}
+
+.room-appointment {
+  margin: 0.75rem 0 0;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
 .chat-send {
   display: flex;
   gap: 0.5rem;
