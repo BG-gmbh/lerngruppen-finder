@@ -20,7 +20,8 @@ cd schul-tinder
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-export FLASK_SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+cp .env.example .env
+# In .env mindestens FLASK_SECRET_KEY setzen; für Laden-E-Mails die SMTP_*-Variablen.
 python3 app.py
 ```
 
@@ -31,11 +32,27 @@ Der Server bindet an `0.0.0.0`, damit andere Geräte zugreifen können.
 
 ## Konfiguration (optional)
 
+Werte in einer Datei **`.env`** im Projektordner (Vorlage: **`.env.example`**). Beim Start lädt `app.py` sie automatisch (`python-dotenv`).
+
 | Umgebungsvariable   | Bedeutung |
 |--------------------|-----------|
 | `FLASK_SECRET_KEY` | Pflicht sinnvoll ab „mehr als nur ich“ — sicherer Session-Schlüssel |
 | `FLASK_HOST`       | Standard: `0.0.0.0` |
 | `FLASK_PORT`       | Standard: `5000` |
 | `FLASK_DEBUG`      | `true` nur zum Entwickeln |
+
+### SMTP (Lehrer-Benachrichtigung bei Laden-Käufen)
+
+| Variable | Bedeutung |
+|----------|-----------|
+| `SMTP_HOST` | Server, z. B. `smtp.gmail.com` — ohne Eintrag wird keine Mail gesendet |
+| `SMTP_PORT` | Standard `587` (STARTTLS) |
+| `SMTP_USER` / `SMTP_PASSWORD` | Anmeldung beim Provider (bei Gmail oft **App-Passwort**) |
+| `SMTP_FROM` | Absender; leer = wie `SMTP_USER` |
+| `SMTP_USE_SSL` | `1` für **SMTP_SSL**, typisch mit Port **465** |
+| `SMTP_STARTTLS` | `0` deaktiviert STARTTLS (nur bei Bedarf) |
+| `SMTP_TIMEOUT` | Sekunden (Standard 30) |
+
+Empfänger sind in der Admin-Oberfläche hinterlegte **Lehrer-Kontakte** plus Nutzer mit **Laden-E-Mail-Benachrichtigung** in den Einstellungen.
 
 Benutzer liegen in `users.db` (SQLite).

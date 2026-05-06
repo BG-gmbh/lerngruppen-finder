@@ -3,10 +3,14 @@ import secrets
 import sqlite3
 from contextlib import closing
 from functools import wraps
+from pathlib import Path
 from urllib.parse import urlencode
 
+from dotenv import load_dotenv
 from flask import Flask, g, jsonify, redirect, request, send_from_directory, session
 from werkzeug.security import check_password_hash, generate_password_hash
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 DATABASE = os.path.join(os.path.dirname(__file__), "users.db")
 LEVELS = frozenset({"pro", "medium", "noob"})
@@ -101,6 +105,7 @@ def init_db():
         _ensure_subject_columns(db)
         _ensure_role_column(db)
         _ensure_banned_column(db)
+        _ensure_user_teacher_email_prefs(db)
         _ensure_chat_tables(db)
         _ensure_invite_codes(db)
         from shop import ensure_shop_table
@@ -125,6 +130,18 @@ def _ensure_banned_column(db):
     if "banned" not in names:
         db.execute(
             "ALTER TABLE users ADD COLUMN banned INTEGER NOT NULL DEFAULT 0"
+        )
+    db.commit()
+
+
+def _ensure_user_teacher_email_prefs(db):
+    cur = db.execute("PRAGMA table_info(users)")
+    names = {row[1] for row in cur.fetchall()}
+    if "contact_email" not in names:
+        db.execute("ALTER TABLE users ADD COLUMN contact_email TEXT")
+    if "notify_laden_email" not in names:
+        db.execute(
+            "ALTER TABLE users ADD COLUMN notify_laden_email INTEGER NOT NULL DEFAULT 0"
         )
     db.commit()
 
@@ -240,6 +257,39 @@ def _user_level_for_subject(db, user_id, subject):
         return "noob"
     v = row["lvl"]
     return v if v in LEVELS else "noob"
+
+
+def _chat_presence_pro_count(db, subject):
+    return int(
+        db.execute(
+            "SELECT COUNT(*) AS c FROM chat_presence WHERE subject = ? AND level = 'pro'",
+            (subject,),
+        ).fetchone()["c"]
+    )
+
+
+def _chat_presence_non_pro_count(db, subject):
+    return int(
+        db.execute(
+            "SELECT COUNT(*) AS c FROM chat_presence WHERE subject = ? AND level != 'pro'",
+            (subject,),
+        ).fetchone()["c"]
+    )
+
+
+def _purge_chat_non_pros_if_no_pro(db, subject):
+    if _chat_presence_pro_count(db, subject) == 0:
+        db.execute(
+            "DELETE FROM chat_presence WHERE subject = ? AND level != 'pro'",
+            (subject,),
+        )
+
+
+def _chat_may_use_room(db, user_id, subject):
+    """Lesen/Schreiben: Pro im Fach oder mindestens ein Pro im Raum."""
+    if _user_level_for_subject(db, user_id, subject) == "pro":
+        return True
+    return _chat_presence_pro_count(db, subject) >= 1
 
 
 def login_required(view):
@@ -755,18 +805,37 @@ def chat_rooms():
         you_in = you is not None
         count_total = len(members)
         non_pro_n = sum(1 for m in members if m["level"] != "pro")
+        pro_n = sum(1 for m in members if m["level"] == "pro")
+        has_pro = pro_n >= 1
         viewer_lv = _user_level_for_subject(db, uid, sub)
-        can_join = viewer_lv == "pro"
-        full = not can_join
+        if viewer_lv == "pro":
+            can_join = True
+            join_block = None
+            full = False
+        else:
+            slot_free = non_pro_n < CHAT_MAX_USERS
+            can_join = (you_in or (has_pro and slot_free))
+            if you_in:
+                join_block = None
+            elif not has_pro:
+                join_block = "need_pro"
+            elif not slot_free:
+                join_block = "full"
+            else:
+                join_block = None
+            full = not can_join
         rooms.append(
             {
                 "subject": sub,
                 "label": CHAT_SUBJECT_LABELS[sub],
                 "count": count_total,
                 "count_non_pro": non_pro_n,
+                "count_pro": pro_n,
+                "has_pro": has_pro,
                 "max": CHAT_MAX_USERS,
                 "full": full,
                 "can_join": can_join,
+                "join_block": join_block,
                 "you_in": you_in,
                 "appointment": appointment_row["appointment"] if appointment_row else None,
                 "members": [
@@ -982,9 +1051,6 @@ def chat_join():
     uid = session["user_id"]
     uname = session["username"]
     lvl = _user_level_for_subject(db, uid, subject)
-    if lvl != "pro":
-        db.commit()
-        return jsonify(error="pro_only"), 403
 
     row = db.execute(
         "SELECT 1 FROM chat_presence WHERE subject = ? AND user_id = ?",
@@ -1001,6 +1067,14 @@ def chat_join():
         )
         db.commit()
         return jsonify(ok=True, you_in=True)
+
+    if lvl != "pro":
+        if _chat_presence_pro_count(db, subject) < 1:
+            db.commit()
+            return jsonify(error="need_pro"), 403
+        if _chat_presence_non_pro_count(db, subject) >= CHAT_MAX_USERS:
+            db.commit()
+            return jsonify(error="full", max=CHAT_MAX_USERS), 409
 
     db.execute(
         """
@@ -1021,10 +1095,18 @@ def chat_leave():
     if not subject:
         return jsonify(error="invalid_subject"), 400
     db = get_db()
+    uid = session["user_id"]
+    prow = db.execute(
+        "SELECT level FROM chat_presence WHERE subject = ? AND user_id = ?",
+        (subject, uid),
+    ).fetchone()
+    was_pro = prow is not None and prow["level"] == "pro"
     db.execute(
         "DELETE FROM chat_presence WHERE subject = ? AND user_id = ?",
-        (subject, session["user_id"]),
+        (subject, uid),
     )
+    if was_pro:
+        _purge_chat_non_pros_if_no_pro(db, subject)
     db.commit()
     return jsonify(ok=True)
 
@@ -1048,13 +1130,13 @@ def chat_messages():
     ).fetchone()
     if not in_room:
         return jsonify(error="not_in_room"), 403
-    if _user_level_for_subject(db, uid, subject) != "pro":
+    if not _chat_may_use_room(db, uid, subject):
         db.execute(
             "DELETE FROM chat_presence WHERE subject = ? AND user_id = ?",
             (subject, uid),
         )
         db.commit()
-        return jsonify(error="pro_only"), 403
+        return jsonify(error="need_pro"), 403
 
     db.execute(
         """
@@ -1110,13 +1192,13 @@ def chat_send():
     ).fetchone()
     if not in_room:
         return jsonify(error="not_in_room"), 403
-    if _user_level_for_subject(db, uid, subject) != "pro":
+    if not _chat_may_use_room(db, uid, subject):
         db.execute(
             "DELETE FROM chat_presence WHERE subject = ? AND user_id = ?",
             (subject, uid),
         )
         db.commit()
-        return jsonify(error="pro_only"), 403
+        return jsonify(error="need_pro"), 403
 
     db.execute(
         """
@@ -1181,6 +1263,15 @@ def logout():
     return redirect("/login.html?flash=logout")
 
 
+def _valid_contact_email(raw):
+    s = (raw or "").strip()
+    if not s:
+        return None
+    if len(s) > 254 or "@" not in s or " " in s:
+        return None
+    return s
+
+
 @app.route("/profile", methods=["POST"])
 @login_required
 def profile_update():
@@ -1188,14 +1279,56 @@ def profile_update():
     if levels is None:
         return redirect("/settings.html?flash=levels")
     lg, lm, le = levels
+    raw_mail = (request.form.get("contact_email") or "").strip()
+    contact_email = _valid_contact_email(raw_mail)
+    if raw_mail and contact_email is None:
+        return redirect("/settings.html?flash=bad_contact_email")
+    want_notify = request.form.get("notify_laden_email") == "1"
+    if want_notify and not contact_email:
+        return redirect("/settings.html?flash=notify_no_email")
+    notify_val = 1 if (want_notify and contact_email) else 0
+    email_val = contact_email
+
+    cur_pwd = request.form.get("current_password") or ""
+    new_pwd = request.form.get("new_password") or ""
+    new_pwd2 = request.form.get("new_password_confirm") or ""
+    pwd_change = bool(cur_pwd or new_pwd or new_pwd2)
+    if pwd_change:
+        if not cur_pwd or not new_pwd or not new_pwd2:
+            return redirect("/settings.html?flash=pwd_incomplete")
+        if len(new_pwd) < 6:
+            return redirect("/settings.html?flash=shortpass")
+        if new_pwd != new_pwd2:
+            return redirect("/settings.html?flash=mismatch")
+
     db = get_db()
-    db.execute(
-        """
-        UPDATE users SET level_german = ?, level_math = ?, level_english = ?
-        WHERE id = ?
-        """,
-        (lg, lm, le, session["user_id"]),
-    )
+    uid = session["user_id"]
+    if pwd_change:
+        row = db.execute(
+            "SELECT password_hash FROM users WHERE id = ?",
+            (uid,),
+        ).fetchone()
+        if row is None or not check_password_hash(row["password_hash"], cur_pwd):
+            return redirect("/settings.html?flash=pwd_current_wrong")
+        new_hash = generate_password_hash(new_pwd)
+        db.execute(
+            """
+            UPDATE users SET level_german = ?, level_math = ?, level_english = ?,
+                contact_email = ?, notify_laden_email = ?,
+                password_hash = ?
+            WHERE id = ?
+            """,
+            (lg, lm, le, email_val, notify_val, new_hash, uid),
+        )
+    else:
+        db.execute(
+            """
+            UPDATE users SET level_german = ?, level_math = ?, level_english = ?,
+                contact_email = ?, notify_laden_email = ?
+            WHERE id = ?
+            """,
+            (lg, lm, le, email_val, notify_val, uid),
+        )
     db.commit()
     return redirect("/settings.html?flash=saved")
 
@@ -1207,7 +1340,8 @@ def api_me():
     db = get_db()
     row = db.execute(
         """
-        SELECT username, role, level_german, level_math, level_english
+        SELECT username, role, level_german, level_math, level_english,
+               contact_email, notify_laden_email
         FROM users WHERE id = ?
         """,
         (session["user_id"],),
@@ -1216,6 +1350,8 @@ def api_me():
         return jsonify({}), 401
     r = row["role"] if "role" in row.keys() else None
     role = r if r in ROLES else "user"
+    ce = row["contact_email"] if "contact_email" in row.keys() else None
+    nl = row["notify_laden_email"] if "notify_laden_email" in row.keys() else 0
     return jsonify(
         user_id=session["user_id"],
         username=row["username"],
@@ -1223,6 +1359,8 @@ def api_me():
         level_german=row["level_german"],
         level_math=row["level_math"],
         level_english=row["level_english"],
+        contact_email=ce or "",
+        notify_laden_email=bool(nl),
     )
 
 

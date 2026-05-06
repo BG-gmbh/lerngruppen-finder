@@ -619,6 +619,19 @@ a:hover {
   white-space: pre-wrap;
 }
 
+.shop-balance-line {
+  font-size: 0.95rem;
+}
+
+.shop-actions {
+  margin-top: 0.75rem;
+}
+
+.shop-points-hint {
+  margin: 0.25rem 0 0;
+  font-size: 0.9rem;
+}
+
 .admin-shop-toolbar {
   display: flex;
   flex-wrap: wrap;

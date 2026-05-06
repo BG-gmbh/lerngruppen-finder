@@ -69,7 +69,8 @@
     host.innerHTML = "";
     rooms.forEach(function (room) {
       var card = document.createElement("article");
-      card.className = "room-card" + (room.full ? " room-card-full" : "");
+      card.className =
+        "room-card" + (room.full || room.can_join === false ? " room-card-full" : "");
 
       var h = document.createElement("h3");
       h.textContent = room.label;
@@ -77,8 +78,21 @@
 
       var meta = document.createElement("p");
       meta.className = "room-meta";
+      var np =
+        room.count_non_pro != null ? room.count_non_pro : room.count || 0;
+      var total = room.count != null ? room.count : 0;
+      var extra = total > np ? " · " + total + " online (inkl. Pro)" : "";
       meta.textContent =
-        room.count + " / " + room.max + " online" + (room.full ? " (voll)" : "");
+        np +
+        " / " +
+        (room.max || 5) +
+        " ohne Pro" +
+        extra +
+        (room.has_pro === false && total > 0
+          ? " — noch kein Pro online"
+          : room.has_pro === false
+            ? " — mind. 1× Pro nötig für Beitritt"
+            : "");
       card.appendChild(meta);
 
       var ul = document.createElement("ul");
@@ -103,6 +117,14 @@
       btn.className = "btn btn-block";
       if (room.you_in) {
         btn.textContent = "Chat fortsetzen";
+      } else if (room.can_join === false) {
+        btn.textContent =
+          room.join_block === "full"
+            ? "Raum voll"
+            : room.join_block === "need_pro"
+              ? "Warte auf Pro"
+              : "Beitreten nicht möglich";
+        btn.disabled = true;
       } else if (room.full) {
         btn.textContent = "Raum voll";
         btn.disabled = true;
@@ -175,7 +197,13 @@
     api("/api/chat/messages" + q, { method: "GET" }).then(function (res) {
       if (res.status === 403) {
         leaveRoomUi(true);
-        setLobbyError("Du warst nicht mehr im Raum. Bitte erneut beitreten.");
+        if (res.data && res.data.error === "need_pro") {
+          setLobbyError(
+            "Im Raum ist gerade kein Pro online. Ohne mindestens einen Pro kann der Chat nicht genutzt werden."
+          );
+        } else {
+          setLobbyError("Du warst nicht mehr im Raum. Bitte erneut beitreten.");
+        }
         return;
       }
       if (!res.ok || !res.data.messages) {
@@ -190,7 +218,14 @@
     setLobbyError("");
     api("/api/chat/join", { method: "POST", body: { subject: subject } }).then(function (res) {
       if (res.status === 409) {
-        setLobbyError("Dieser Raum ist voll (" + maxUsers + " Nutzer). Versuch es gleich nochmal.");
+        setLobbyError("Dieser Raum ist voll (" + maxUsers + " Plätze ohne Pro). Versuch es gleich nochmal.");
+        loadRooms();
+        return;
+      }
+      if (res.status === 403 && res.data && res.data.error === "need_pro") {
+        setLobbyError(
+          "Beitreten nicht möglich: Es muss schon mindestens ein Pro im Raum sein. Bitte warten oder selbst als Pro beitreten."
+        );
         loadRooms();
         return;
       }
@@ -252,6 +287,12 @@
     }).then(function (res) {
       if (!res.ok) {
         input.value = body;
+        if (res.status === 403 && res.data && res.data.error === "need_pro") {
+          leaveRoomUi(true);
+          setLobbyError(
+            "Es ist kein Pro mehr im Raum. Der Chat ist für dich vorerst beendet — bitte erneut beitreten, wenn ein Pro da ist."
+          );
+        }
         return;
       }
       fetchMessages();

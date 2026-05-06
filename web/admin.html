@@ -12,6 +12,7 @@
     <nav>
       <span class="nav-user" id="nav-username"></span>
       <a href="/dashboard.html" class="btn btn-small">Dashboard</a>
+      <a href="/laden.html" class="btn btn-small btn-secondary">Laden</a>
       <a href="/chat.html" class="btn btn-small btn-secondary">Chat</a>
       <a href="/settings.html" class="btn btn-small btn-secondary">Einstellungen</a>
       <a href="/admin.html" class="btn btn-small btn-secondary">Admin</a>
@@ -30,7 +31,8 @@
       <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="users">Nutzer verwalten</button>
       <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="chats">Chats verwalten</button>
       <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="codes">Einladungs-Codes</button>
-      <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="shop">Shop</button>
+      <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="shop">Laden</button>
+      <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="teachers">Lehrer (E-Mail)</button>
     </div>
 
     <section class="card tab-panel is-active" id="tab-accounts" role="tabpanel">
@@ -111,8 +113,8 @@
     </section>
 
     <section class="card tab-panel hidden" id="tab-shop" role="tabpanel">
-      <h2 class="card-title">Shop-Einträge</h2>
-      <p class="field-hint">Einträge erscheinen für eingeloggte Nutzer unter <a href="/shop.html">Shop</a>. Nur aktive Einträge sind sichtbar.</p>
+      <h2 class="card-title">Laden — Einträge</h2>
+      <p class="field-hint">Einträge erscheinen für eingeloggte Nutzer unter <a href="/laden.html">Laden</a>. Nur aktive Einträge sind sichtbar.</p>
 
       <form id="shop-form" class="stack-form">
         <input type="hidden" id="shop-edit-id" value="">
@@ -129,12 +131,16 @@
           <input id="shop-price" type="text" maxlength="120" placeholder="z. B. kostenlos, 2 € Spende …" autocomplete="off">
         </label>
         <label>
+          Punktepreis (0 = nicht mit Punkten kaufbar)
+          <input id="shop-points-price" type="number" min="0" max="1000000" value="0" step="1">
+        </label>
+        <label>
           Sortierung (kleinere Zahl zuerst)
           <input id="shop-sort" type="number" value="0" step="1">
         </label>
         <label class="check-row">
           <input id="shop-active" type="checkbox" checked>
-          <span>Aktiv (sichtbar im Shop)</span>
+          <span>Aktiv (sichtbar im Laden)</span>
         </label>
         <div class="admin-shop-toolbar">
           <button type="submit" class="btn" id="shop-save-btn">Speichern</button>
@@ -144,6 +150,28 @@
 
       <h3 class="subsection-title">Alle Einträge</h3>
       <ul id="shop-list" class="code-list"></ul>
+
+      <h3 class="subsection-title">Punkte-Käufe (Protokoll)</h3>
+      <p class="field-hint muted">Jede Ausgabe im Laden mit Datum/Uhrzeit. E-Mail an Lehrer nur wenn SMTP in der Server-Umgebung gesetzt ist (<code>SMTP_HOST</code> …).</p>
+      <ul id="laden-purchases-list" class="code-list"></ul>
+    </section>
+
+    <section class="card tab-panel hidden" id="tab-teachers" role="tabpanel">
+      <h2 class="card-title">Lehrer für E-Mail-Benachrichtigungen</h2>
+      <p class="field-hint">Lehrkräfte können unter <a href="/settings.html">Einstellungen</a> selbst eine E-Mail eintragen und „Laden-Käufe“ abonnieren. Zusätzlich kannst du hier weitere Adressen pflegen. Versand nur wenn SMTP auf dem Server gesetzt ist (<code>SMTP_HOST</code> …).</p>
+      <form id="teacher-form" class="stack-form" autocomplete="off">
+        <label>
+          E-Mail
+          <input id="teacher-email" type="email" required maxlength="254" placeholder="lehrer@schule.de">
+        </label>
+        <label>
+          Anzeigename (optional)
+          <input id="teacher-name" type="text" maxlength="120" placeholder="z. B. Frau Müller">
+        </label>
+        <button type="submit" class="btn">Lehrer hinzufügen</button>
+      </form>
+      <h3 class="subsection-title">Einträge</h3>
+      <ul id="teacher-list" class="code-list"></ul>
     </section>
   </main>
 
@@ -157,6 +185,7 @@
         users: document.getElementById("tab-users"),
         codes: document.getElementById("tab-codes"),
         shop: document.getElementById("tab-shop"),
+        teachers: document.getElementById("tab-teachers"),
       };
 
       function renderUsers(data) {
@@ -237,6 +266,10 @@
           }
           if (key === "shop") {
             loadShop();
+            loadLadenPurchases();
+          }
+          if (key === "teachers") {
+            loadTeachers();
           }
         });
       });
@@ -491,6 +524,7 @@
         document.getElementById("shop-title").value = "";
         document.getElementById("shop-description").value = "";
         document.getElementById("shop-price").value = "";
+        document.getElementById("shop-points-price").value = "0";
         document.getElementById("shop-sort").value = "0";
         document.getElementById("shop-active").checked = true;
         document.getElementById("shop-save-btn").textContent = "Anlegen";
@@ -501,6 +535,9 @@
         document.getElementById("shop-title").value = it.title || "";
         document.getElementById("shop-description").value = it.description || "";
         document.getElementById("shop-price").value = it.price_hint || "";
+        document.getElementById("shop-points-price").value = String(
+          it.points_price != null ? it.points_price : 0
+        );
         document.getElementById("shop-sort").value = String(it.sort_order != null ? it.sort_order : 0);
         document.getElementById("shop-active").checked = !!it.active;
         document.getElementById("shop-save-btn").textContent = "Aktualisieren";
@@ -518,7 +555,7 @@
             ul.innerHTML = "";
             if (!data || !data.items || !data.items.length) {
               var li0 = document.createElement("li");
-              li0.textContent = "Noch keine Shop-Einträge.";
+              li0.textContent = "Noch keine Einträge im Laden.";
               li0.className = "muted";
               ul.appendChild(li0);
               return;
@@ -529,7 +566,8 @@
               info.textContent =
                 (it.active ? "" : "[inaktiv] ") +
                 it.title +
-                (it.price_hint ? " — " + it.price_hint : "");
+                (it.price_hint ? " — " + it.price_hint : "") +
+                (it.points_price > 0 ? " — " + it.points_price + " Punkte" : "");
               li.appendChild(info);
               var edit = document.createElement("button");
               edit.type = "button";
@@ -577,6 +615,132 @@
         document.getElementById("shop-title").focus();
       });
 
+      function loadLadenPurchases() {
+        var ul = document.getElementById("laden-purchases-list");
+        if (!ul) return;
+        fetch("/api/admin/laden-purchases", { credentials: "same-origin" })
+          .then(function (r) {
+            if (r.status === 401 || r.status === 403) return null;
+            return r.json();
+          })
+          .then(function (data) {
+            ul.innerHTML = "";
+            if (!data || !data.purchases || !data.purchases.length) {
+              var li0 = document.createElement("li");
+              li0.textContent = "Noch keine Käufe.";
+              li0.className = "muted";
+              ul.appendChild(li0);
+              return;
+            }
+            data.purchases.forEach(function (p) {
+              var li = document.createElement("li");
+              var mail = p.email_sent
+                ? " — E-Mail: gesendet"
+                : p.email_error
+                  ? " — E-Mail: " + p.email_error
+                  : " — E-Mail: nicht gesendet";
+              li.textContent =
+                p.created_at +
+                " — " +
+                p.username +
+                " — " +
+                p.item_title +
+                " — " +
+                p.points_spent +
+                " Punkte" +
+                mail;
+              ul.appendChild(li);
+            });
+          });
+      }
+
+      function loadTeachers() {
+        fetch("/api/admin/teachers", { credentials: "same-origin" })
+          .then(function (r) {
+            if (r.status === 401 || r.status === 403) return null;
+            return r.json();
+          })
+          .then(function (data) {
+            var ul = document.getElementById("teacher-list");
+            if (!ul) return;
+            ul.innerHTML = "";
+            if (!data || !data.teachers || !data.teachers.length) {
+              var li0 = document.createElement("li");
+              li0.textContent = "Noch keine Lehrer-Einträge.";
+              li0.className = "muted";
+              ul.appendChild(li0);
+              return;
+            }
+            data.teachers.forEach(function (t) {
+              var li = document.createElement("li");
+              var span = document.createElement("span");
+              span.textContent =
+                (t.active ? "" : "[inaktiv] ") +
+                t.email +
+                (t.display_name ? " (" + t.display_name + ")" : "");
+              li.appendChild(span);
+              var del = document.createElement("button");
+              del.type = "button";
+              del.className = "btn btn-small btn-secondary";
+              del.style.marginLeft = "0.75rem";
+              del.textContent = "Löschen";
+              del.addEventListener("click", function () {
+                if (!window.confirm("Eintrag wirklich löschen?")) return;
+                fetch("/api/admin/teachers/" + t.id, {
+                  method: "DELETE",
+                  credentials: "same-origin",
+                })
+                  .then(function (r) {
+                    return r.json().then(function (d) {
+                      return { ok: r.ok, d: d };
+                    });
+                  })
+                  .then(function (x) {
+                    if (!x.ok) {
+                      window.alert("Löschen fehlgeschlagen.");
+                      return;
+                    }
+                    loadTeachers();
+                  });
+              });
+              li.appendChild(del);
+              ul.appendChild(li);
+            });
+          });
+      }
+
+      document.getElementById("teacher-form").addEventListener("submit", function (e) {
+        e.preventDefault();
+        var email = document.getElementById("teacher-email").value.trim();
+        var display_name = document.getElementById("teacher-name").value.trim();
+        fetch("/api/admin/teachers", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: email, display_name: display_name }),
+        })
+          .then(function (r) {
+            return r.json().then(function (d) {
+              return { ok: r.ok, d: d };
+            });
+          })
+          .then(function (x) {
+            if (!x.ok) {
+              window.alert(
+                x.d && x.d.error === "duplicate"
+                  ? "Diese E-Mail ist schon eingetragen."
+                  : x.d && x.d.error
+                    ? "Fehler: " + x.d.error
+                    : "Speichern fehlgeschlagen."
+              );
+              return;
+            }
+            document.getElementById("teacher-email").value = "";
+            document.getElementById("teacher-name").value = "";
+            loadTeachers();
+          });
+      });
+
       document.getElementById("shop-form").addEventListener("submit", function (e) {
         e.preventDefault();
         var id = document.getElementById("shop-edit-id").value.trim();
@@ -584,6 +748,7 @@
           title: document.getElementById("shop-title").value.trim(),
           description: document.getElementById("shop-description").value.trim(),
           price_hint: document.getElementById("shop-price").value.trim(),
+          points_price: parseInt(document.getElementById("shop-points-price").value, 10) || 0,
           sort_order: parseInt(document.getElementById("shop-sort").value, 10) || 0,
           active: document.getElementById("shop-active").checked,
         };
