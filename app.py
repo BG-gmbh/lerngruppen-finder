@@ -157,7 +157,31 @@ def _ensure_chat_tables(db):
             appointment TEXT NOT NULL,
             created_by INTEGER NOT NULL,
             created_at TEXT NOT NULL DEFAULT (datetime('now')), 
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            ended INTEGER NOT NULL DEFAULT 0,
+            ended_at TEXT
+        )
+        """
+    )
+    cur = db.execute("PRAGMA table_info(chat_appointments)")
+    appointment_cols = {row[1] for row in cur.fetchall()}
+    if "ended" not in appointment_cols:
+        db.execute(
+            "ALTER TABLE chat_appointments ADD COLUMN ended INTEGER NOT NULL DEFAULT 0"
+        )
+    if "ended_at" not in appointment_cols:
+        db.execute(
+            "ALTER TABLE chat_appointments ADD COLUMN ended_at TEXT"
+        )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chat_ratings (
+            subject TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            rating INTEGER NOT NULL,
+            comment TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (subject, user_id)
         )
         """
     )
@@ -434,6 +458,50 @@ def admin_user_ban():
     return jsonify(ok=True)
 
 
+@app.route("/api/admin/delete_message/<int:message_id>", methods=["DELETE"])
+@admin_api
+def admin_delete_message(message_id):
+    db = get_db()
+    row = db.execute("SELECT id FROM chat_messages WHERE id = ?", (message_id,)).fetchone()
+    if not row:
+        return jsonify(error="message_not_found"), 404
+    db.execute("DELETE FROM chat_messages WHERE id = ?", (message_id,))
+    db.commit()
+    return jsonify(success=True)
+
+
+@app.route("/api/admin/chats", methods=["GET"])
+@admin_api
+def admin_get_chats():
+    db = get_db()
+    result = []
+    for subject in CHAT_SUBJECTS:
+        count = db.execute(
+            "SELECT COUNT(*) as c FROM chat_messages WHERE subject = ?",
+            (subject,)
+        ).fetchone()["c"]
+        result.append({
+            "subject": subject,
+            "label": CHAT_SUBJECT_LABELS[subject],
+            "message_count": count
+        })
+    return jsonify(chats=result)
+
+
+@app.route("/api/admin/delete_chat/<subject>", methods=["DELETE"])
+@admin_api
+def admin_delete_chat(subject):
+    if subject not in CHAT_SUBJECTS:
+        return jsonify(error="invalid_subject"), 400
+    db = get_db()
+    db.execute("DELETE FROM chat_messages WHERE subject = ?", (subject,))
+    db.execute("DELETE FROM chat_appointments WHERE subject = ?", (subject,))
+    db.execute("DELETE FROM chat_ratings WHERE subject = ?", (subject,))
+    db.execute("DELETE FROM chat_presence WHERE subject = ?", (subject,))
+    db.commit()
+    return jsonify(success=True)
+
+
 @app.route("/api/setup-status", methods=["GET"])
 def setup_status():
     db = get_db()
@@ -598,16 +666,35 @@ def chat_appointment_get():
     if not subject:
         return jsonify(error="invalid_subject"), 400
     db = get_db()
+    uid = session["user_id"]
     row = db.execute(
-        "SELECT appointment, created_at FROM chat_appointments WHERE subject = ?",
+        "SELECT appointment, created_at, ended, ended_at FROM chat_appointments WHERE subject = ?",
+        (subject,),
+    ).fetchone()
+    if not row:
+        db.commit()
+        return jsonify(appointment=None)
+
+    your_rating = db.execute(
+        "SELECT rating, comment FROM chat_ratings WHERE subject = ? AND user_id = ?",
+        (subject, uid),
+    ).fetchone()
+    rating_stats = db.execute(
+        "SELECT COUNT(*) AS count, AVG(rating) AS avg FROM chat_ratings WHERE subject = ?",
         (subject,),
     ).fetchone()
     db.commit()
-    if not row:
-        return jsonify(appointment=None)
     return jsonify(
         appointment=row["appointment"],
         created_at=row["created_at"],
+        ended=bool(row["ended"]),
+        ended_at=row["ended_at"],
+        your_rating={
+            "rating": your_rating["rating"],
+            "comment": your_rating["comment"],
+        } if your_rating else None,
+        rating_count=rating_stats["count"],
+        rating_avg=float(rating_stats["avg"]) if rating_stats["avg"] is not None else None,
     )
 
 
@@ -649,6 +736,86 @@ def chat_appointment_post():
             VALUES (?, ?, ?, ?, ?)
             """,
             (subject, appointment, uid, now, now),
+        )
+    db.commit()
+    return jsonify(ok=True)
+
+
+@app.route("/api/chat/appointment/end", methods=["POST"])
+@login_required_api
+def chat_appointment_end():
+    data = request.get_json(silent=True) or {}
+    subject = chat_subject_key(data.get("subject"))
+    if not subject:
+        return jsonify(error="invalid_subject"), 400
+    db = get_db()
+    uid = session["user_id"]
+    level = _user_level_for_subject(db, uid, subject)
+    if level != "pro":
+        return jsonify(error="permission"), 403
+    row = db.execute(
+        "SELECT ended FROM chat_appointments WHERE subject = ?",
+        (subject,),
+    ).fetchone()
+    if not row:
+        db.commit()
+        return jsonify(error="no_appointment"), 400
+    if row["ended"]:
+        db.commit()
+        return jsonify(ok=True)
+    now = db.execute("SELECT datetime('now') AS now").fetchone()["now"]
+    db.execute(
+        "UPDATE chat_appointments SET ended = 1, ended_at = ?, updated_at = ? WHERE subject = ?",
+        (now, now, subject),
+    )
+    db.commit()
+    return jsonify(ok=True)
+
+
+@app.route("/api/chat/appointment/rate", methods=["POST"])
+@login_required_api
+def chat_appointment_rate():
+    data = request.get_json(silent=True) or {}
+    subject = chat_subject_key(data.get("subject"))
+    if not subject:
+        return jsonify(error="invalid_subject"), 400
+    try:
+        rating = int(data.get("rating"))
+    except (TypeError, ValueError):
+        return jsonify(error="invalid_rating"), 400
+    if rating < 1 or rating > 5:
+        return jsonify(error="invalid_rating"), 400
+    comment = (data.get("comment") or "").strip()
+    db = get_db()
+    uid = session["user_id"]
+    appointment = db.execute(
+        "SELECT ended FROM chat_appointments WHERE subject = ?",
+        (subject,),
+    ).fetchone()
+    if not appointment or not appointment["ended"]:
+        db.commit()
+        return jsonify(error="not_ended"), 400
+    in_room = db.execute(
+        "SELECT 1 FROM chat_presence WHERE subject = ? AND user_id = ?",
+        (subject, uid),
+    ).fetchone()
+    if not in_room:
+        db.commit()
+        return jsonify(error="not_in_room"), 403
+    existing = db.execute(
+        "SELECT 1 FROM chat_ratings WHERE subject = ? AND user_id = ?",
+        (subject, uid),
+    ).fetchone()
+    now = db.execute("SELECT datetime('now') AS now").fetchone()["now"]
+    if existing:
+        db.execute(
+            "UPDATE chat_ratings SET rating = ?, comment = ?, created_at = ? WHERE subject = ? AND user_id = ?",
+            (rating, comment, now, subject, uid),
+        )
+    else:
+        db.execute(
+            "INSERT INTO chat_ratings (subject, user_id, rating, comment, created_at) VALUES (?, ?, ?, ?, ?)",
+            (subject, uid, rating, comment, now),
         )
     db.commit()
     return jsonify(ok=True)

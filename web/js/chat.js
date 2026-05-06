@@ -7,6 +7,7 @@
   var msgTimer = null;
   var maxUsers = 5;
   var userLevels = null;
+  var userRole = null;
 
   function $(id) {
     return document.getElementById(id);
@@ -131,6 +132,7 @@
     items.forEach(function (m) {
       var wrap = document.createElement("div");
       wrap.className = "chat-msg" + (m.user_id === window.__uid ? " chat-msg-own" : "");
+      wrap.setAttribute("data-id", m.id);
       var head = document.createElement("div");
       head.className = "chat-msg-head";
       head.innerHTML =
@@ -144,6 +146,13 @@
       body.textContent = m.body;
       wrap.appendChild(head);
       wrap.appendChild(body);
+      if (userRole === 'admin') {
+        var deleteBtn = document.createElement("button");
+        deleteBtn.className = "btn btn-ghost btn-small";
+        deleteBtn.textContent = "Löschen";
+        deleteBtn.onclick = function() { deleteMessage(m.id); };
+        wrap.appendChild(deleteBtn);
+      }
       box.appendChild(wrap);
       if (m.id > sinceId) sinceId = m.id;
     });
@@ -160,9 +169,13 @@
         setLobbyError("Du warst nicht mehr im Raum. Bitte erneut beitreten.");
         return;
       }
-      if (!res.ok || !res.data.messages) return;
+      if (!res.ok || !res.data.messages) {
+        loadAppointment();
+        return;
+      }
       if (res.data.messages.length)
         appendMessages(res.data.messages, beforeSince === 0);
+      loadAppointment();
     });
   }
 
@@ -233,6 +246,18 @@
     });
   }
 
+  function deleteMessage(id) {
+    if (!confirm("Nachricht wirklich löschen?")) return;
+    api("/api/admin/delete_message/" + id, { method: "DELETE" }).then(function (res) {
+      if (res.ok) {
+        var msg = document.querySelector('.chat-msg[data-id="' + id + '"]');
+        if (msg) msg.remove();
+      } else {
+        alert("Fehler beim Löschen: " + (res.data.error || "Unbekannt"));
+      }
+    });
+  }
+
   function updateAppointmentUi(data) {
     var container = $("chat-appointment");
     if (!container) return;
@@ -245,18 +270,72 @@
     } else {
       content += '<p class="chat-appointment-text">Kein Termin gesetzt.</p>';
     }
-    if (
+
+    var hasProRight =
       currentSubject &&
       userLevels &&
-      userLevels["level_" + currentSubject] === "pro"
-    ) {
-      content +=
-        '<button type="button" class="btn btn-secondary btn-small" id="btn-set-appointment">Termin festlegen</button>';
+      userLevels["level_" + currentSubject] === "pro";
+
+    if (data && data.ended) {
+      content += '<p class="chat-appointment-text"><strong>Termin beendet.</strong></p>';
+      if (data.rating_count) {
+        content +=
+          '<p class="chat-appointment-text">Bewertungen: ' +
+          data.rating_count +
+          (data.rating_avg ? " (Ø " + data.rating_avg.toFixed(1) + ")" : "") +
+          '</p>';
+      }
+      if (data.your_rating) {
+        content +=
+          '<p class="chat-appointment-text">Danke für deine Bewertung: ' +
+          esc(String(data.your_rating.rating)) +
+          '/5</p>';
+        if (data.your_rating.comment) {
+          content +=
+            '<p class="chat-appointment-text">Kommentar: ' +
+            esc(data.your_rating.comment) +
+            "</p>";
+        }
+      } else {
+        content +=
+          '<div class="chat-rating-box">' +
+          '<label for="rating-value">Bewertung:</label>' +
+          '<select id="rating-value" class="chat-rating-input">' +
+          '<option value="1">1</option>' +
+          '<option value="2">2</option>' +
+          '<option value="3">3</option>' +
+          '<option value="4">4</option>' +
+          '<option value="5" selected>5</option>' +
+          '</select>' +
+          '<label for="rating-comment">Kommentar (optional):</label>' +
+          '<textarea id="rating-comment" class="chat-rating-textarea" rows="2" placeholder="Wie war das Treffen?"></textarea>' +
+          '<button type="button" class="btn btn-secondary btn-small" id="btn-submit-rating">Bewerten</button>' +
+          '</div>';
+      }
+    } else {
+      if (hasProRight && data && data.appointment) {
+        content +=
+          '<button type="button" class="btn btn-secondary btn-small" id="btn-end-appointment">Termin beenden</button>';
+      }
+      if (hasProRight) {
+        content +=
+          '<button type="button" class="btn btn-secondary btn-small" id="btn-set-appointment">Termin festlegen</button>';
+      }
     }
+
     container.innerHTML = content;
-    var btn = $("btn-set-appointment");
-    if (btn) {
-      btn.addEventListener("click", setAppointment);
+
+    var setBtn = $("btn-set-appointment");
+    if (setBtn) {
+      setBtn.addEventListener("click", setAppointment);
+    }
+    var endBtn = $("btn-end-appointment");
+    if (endBtn) {
+      endBtn.addEventListener("click", endAppointment);
+    }
+    var submitBtn = $("btn-submit-rating");
+    if (submitBtn) {
+      submitBtn.addEventListener("click", submitRating);
     }
   }
 
@@ -288,6 +367,40 @@
     }).then(function (res) {
       if (!res.ok) {
         setLobbyError("Termin speichern fehlgeschlagen.");
+        return;
+      }
+      loadAppointment();
+    });
+  }
+
+  function endAppointment() {
+    if (!currentSubject) return;
+    api("/api/chat/appointment/end", {
+      method: "POST",
+      body: { subject: currentSubject },
+    }).then(function (res) {
+      if (!res.ok) {
+        setLobbyError("Termin beenden fehlgeschlagen.");
+        return;
+      }
+      loadAppointment();
+    });
+  }
+
+  function submitRating() {
+    if (!currentSubject) return;
+    var rating = parseInt($("rating-value").value, 10);
+    var comment = $("rating-comment").value || "";
+    api("/api/chat/appointment/rate", {
+      method: "POST",
+      body: {
+        subject: currentSubject,
+        rating: rating,
+        comment: comment,
+      },
+    }).then(function (res) {
+      if (!res.ok) {
+        setLobbyError("Bewertung konnte nicht gespeichert werden.");
         return;
       }
       loadAppointment();
@@ -370,5 +483,13 @@
     return loadRooms();
   }).then(function () {
     roomsTimer = setInterval(loadRooms, POLL_ROOMS_MS);
+  });
+
+  fetch("/api/me", { credentials: "same-origin" }).then(function (r) {
+    return r.json();
+  }).then(function (data) {
+    userRole = data.role;
+  }).catch(function () {
+    // ignore
   });
 })();
