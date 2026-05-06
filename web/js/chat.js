@@ -5,9 +5,11 @@
   var sinceId = 0;
   var roomsTimer = null;
   var msgTimer = null;
+  var appointmentTimer = null;
   var maxUsers = 5;
   var userLevels = null;
   var userRole = null;
+  var lastAppointmentUiKey = null;
 
   function $(id) {
     return document.getElementById(id);
@@ -39,6 +41,13 @@
     if (msgTimer) {
       clearInterval(msgTimer);
       msgTimer = null;
+    }
+  }
+
+  function stopAppointmentPoll() {
+    if (appointmentTimer) {
+      clearInterval(appointmentTimer);
+      appointmentTimer = null;
     }
   }
 
@@ -170,12 +179,10 @@
         return;
       }
       if (!res.ok || !res.data.messages) {
-        loadAppointment();
         return;
       }
       if (res.data.messages.length)
         appendMessages(res.data.messages, beforeSince === 0);
-      loadAppointment();
     });
   }
 
@@ -200,15 +207,20 @@
       $("chat-title").textContent = "Chat: " + (labels[subject] || subject);
       stopRoomsPoll();
       stopMsgPoll();
+      stopAppointmentPoll();
+      lastAppointmentUiKey = null;
       fetchMessages();
       loadAppointment();
       msgTimer = setInterval(fetchMessages, POLL_MSG_MS);
+      appointmentTimer = setInterval(loadAppointment, 8000);
       $("chat-input").focus();
     });
   }
 
   function leaveRoomUi(silent) {
     stopMsgPoll();
+    stopAppointmentPoll();
+    lastAppointmentUiKey = null;
     currentSubject = null;
     sinceId = 0;
     $("chat-panel").classList.add("hidden");
@@ -258,6 +270,38 @@
     });
   }
 
+  function stableAppointmentKey(data, hasProRight) {
+    var yr = null;
+    if (data && data.your_rating) {
+      yr = {
+        r: data.your_rating.rating,
+        c: data.your_rating.comment || "",
+      };
+    }
+    return JSON.stringify({
+      appointment: data && data.appointment ? data.appointment : null,
+      ended: !!(data && data.ended),
+      yr: yr,
+      pro: !!hasProRight,
+    });
+  }
+
+  function ratingSelectOptions(yourRating) {
+    var opts = "";
+    var current = yourRating && yourRating.rating ? parseInt(yourRating.rating, 10) : 5;
+    for (var s = 1; s <= 5; s++) {
+      opts +=
+        '<option value="' +
+        s +
+        '"' +
+        (s === current ? " selected" : "") +
+        ">" +
+        s +
+        "</option>";
+    }
+    return opts;
+  }
+
   function updateAppointmentUi(data) {
     var container = $("chat-appointment");
     if (!container) return;
@@ -276,42 +320,36 @@
       userLevels &&
       userLevels["level_" + currentSubject] === "pro";
 
+    var stableKey = stableAppointmentKey(data, hasProRight);
+    if (stableKey === lastAppointmentUiKey) {
+      var statsEl = $("chat-rating-stats");
+      if (statsEl && data && data.ended) {
+        statsEl.textContent =
+          "Bewertungen: " +
+          (data.rating_count || 0) +
+          (data.rating_avg != null ? " (Ø " + data.rating_avg.toFixed(1) + ")" : "");
+      }
+      return;
+    }
+    lastAppointmentUiKey = stableKey;
+
     if (data && data.ended) {
       content += '<p class="chat-appointment-text"><strong>Termin beendet.</strong></p>';
-      if (data.rating_count) {
-        content +=
-          '<p class="chat-appointment-text">Bewertungen: ' +
-          data.rating_count +
-          (data.rating_avg ? " (Ø " + data.rating_avg.toFixed(1) + ")" : "") +
-          '</p>';
-      }
-      if (data.your_rating) {
-        content +=
-          '<p class="chat-appointment-text">Danke für deine Bewertung: ' +
-          esc(String(data.your_rating.rating)) +
-          '/5</p>';
-        if (data.your_rating.comment) {
-          content +=
-            '<p class="chat-appointment-text">Kommentar: ' +
-            esc(data.your_rating.comment) +
-            "</p>";
-        }
-      } else {
-        content +=
-          '<div class="chat-rating-box">' +
-          '<label for="rating-value">Bewertung:</label>' +
-          '<select id="rating-value" class="chat-rating-input">' +
-          '<option value="1">1</option>' +
-          '<option value="2">2</option>' +
-          '<option value="3">3</option>' +
-          '<option value="4">4</option>' +
-          '<option value="5" selected>5</option>' +
-          '</select>' +
-          '<label for="rating-comment">Kommentar (optional):</label>' +
-          '<textarea id="rating-comment" class="chat-rating-textarea" rows="2" placeholder="Wie war das Treffen?"></textarea>' +
-          '<button type="button" class="btn btn-secondary btn-small" id="btn-submit-rating">Bewerten</button>' +
-          '</div>';
-      }
+      content +=
+        '<p class="chat-appointment-text muted" id="chat-rating-stats">Bewertungen: ' +
+        (data.rating_count || 0) +
+        (data.rating_avg != null ? " (Ø " + data.rating_avg.toFixed(1) + ")" : "") +
+        "</p>";
+      content +=
+        '<div class="chat-rating-box">' +
+        '<label for="rating-value">Bewertung (1–5):</label>' +
+        '<select id="rating-value" class="chat-rating-input">' +
+        ratingSelectOptions(data.your_rating) +
+        "</select>" +
+        '<label for="rating-comment">Kommentar (optional):</label>' +
+        '<textarea id="rating-comment" class="chat-rating-textarea" rows="3" placeholder="Wie war das Treffen?"></textarea>' +
+        '<button type="button" class="btn btn-secondary btn-small" id="btn-submit-rating">Bewertung speichern</button>' +
+        "</div>";
     } else {
       if (hasProRight && data && data.appointment) {
         content +=
@@ -324,6 +362,11 @@
     }
 
     container.innerHTML = content;
+
+    var ta = $("rating-comment");
+    if (ta && data && data.your_rating && data.your_rating.comment) {
+      ta.value = data.your_rating.comment;
+    }
 
     var setBtn = $("btn-set-appointment");
     if (setBtn) {
