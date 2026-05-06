@@ -19,6 +19,11 @@
     setup_done: "Admin-Konto erstellt. Du bist eingeloggt.",
     bad_invite: "Ungültiger oder bereits benutzter Code.",
     redeem_ok: "Konto erstellt. Willkommen!",
+    bad_contact_email: "Bitte eine gültige E-Mail-Adresse eintragen.",
+    notify_no_email: "Für Laden-Benachrichtigungen bitte eine E-Mail angeben oder die Option abwählen.",
+    pwd_incomplete:
+      "Zum Passwortwechsel bitte aktuelles Passwort, neues Passwort und Wiederholung ausfüllen.",
+    pwd_current_wrong: "Das aktuelle Passwort ist falsch.",
   };
 
   var text = messages[code];
