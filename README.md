@@ -53,6 +53,15 @@ Werte in einer Datei **`.env`** im Projektordner (Vorlage: **`.env.example`**). 
 | `SMTP_STARTTLS` | `0` deaktiviert STARTTLS (nur bei Bedarf) |
 | `SMTP_TIMEOUT` | Sekunden (Standard 30) |
 
+#### Gmail
+
+1. Im Google-Konto **Zwei-Faktor-Authentifizierung** aktivieren.
+2. Unter [App-Passwörter](https://myaccount.google.com/apppasswords) ein Passwort für „Mail“ erzeugen (16 Zeichen, Leerzeichen beim Einfügen weglassen).
+3. In `.env` (siehe **`.env.example`**): `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`, `SMTP_USER` und `SMTP_FROM` = deine Gmail-Adresse, `SMTP_PASSWORD` = **nur** das App-Passwort (nie das normale Anmeldepasswort).
+4. Server neu starten, damit `.env` geladen wird.
+
+**Workspace (eigene Domain):** gleicher Host `smtp.gmail.com`, `SMTP_USER` / `SMTP_FROM` = deine `@schule.de`-Adresse, ebenfalls App-Passwort falls von der Organisation erlaubt.
+
 Empfänger sind in der Admin-Oberfläche hinterlegte **Lehrer-Kontakte** plus Nutzer mit **Laden-E-Mail-Benachrichtigung** in den Einstellungen.
 
 Benutzer liegen in `users.db` (SQLite).
