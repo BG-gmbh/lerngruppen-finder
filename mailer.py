@@ -3,7 +3,7 @@
 Konfiguration per Umgebungsvariablen (z. B. in `.env` neben `app.py`, wird beim Start geladen):
 
 SMTP_HOST       — z. B. smtp.gmail.com (leer = kein Versand)
-SMTP_PORT       — Standard 587 (mit STARTTLS) bzw. oft 465 mit SMTP_USE_SSL
+SMTP_PORT       — Gmail: 587 + STARTTLS (Standard) oder 465 + SMTP_USE_SSL=1
 SMTP_USER       — Login (leer = kein Login, nur für offene Relays)
 SMTP_PASSWORD   — Passwort / App-Passwort
 SMTP_FROM       — Absender-Adresse (falls leer: SMTP_USER)
