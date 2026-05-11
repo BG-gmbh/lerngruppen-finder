@@ -66,9 +66,9 @@
             var bal = data && data.points_balance != null ? data.points_balance : 0;
             var smtp = data && data.smtp_configured;
             balEl.textContent =
-              "Deine Punkte (Summe aus den Fach-Bewertungen der Admins): " +
+              "Deine Punkte:" +
               bal +
-              "." +
+              " (Summe aus den Fach-Bewertungen der Admins)." +
               (smtp
                 ? " E-Mail-Benachrichtigung an Lehrer ist auf dem Server eingerichtet."
                 : " Hinweis: Ohne SMTP auf dem Server erhalten Lehrer keine automatische E-Mail.");

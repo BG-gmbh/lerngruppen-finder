@@ -64,4 +64,28 @@ Werte in einer Datei **`.env`** im Projektordner (Vorlage: **`.env.example`**). 
 
 Empfänger sind in der Admin-Oberfläche hinterlegte **Lehrer-Kontakte** plus Nutzer mit **Laden-E-Mail-Benachrichtigung** in den Einstellungen.
 
+### Mail-Server Schnellanleitung (5 Minuten)
+
+1. Datei `.env` anlegen (falls noch nicht da):  
+   `cp .env.example .env`
+2. In `.env` folgende Werte setzen (Beispiel Gmail mit STARTTLS/587):
+   - `SMTP_HOST=smtp.gmail.com`
+   - `SMTP_PORT=587`
+   - `SMTP_USER=deine.adresse@gmail.com`
+   - `SMTP_PASSWORD=<dein-app-passwort>`
+   - `SMTP_FROM=deine.adresse@gmail.com`
+3. Server neu starten:
+   - laufenden Prozess stoppen (`CTRL+C`)
+   - neu starten mit `python3 app.py` (oder venv: `python app.py`)
+4. In `Admin -> Lehrer (E-Mail)` mindestens eine Lehrer-Adresse eintragen.
+5. Test: Einen Punkte-Kauf im Laden auslösen.  
+   Im Admin-Tab `Laden` im Protokoll muss danach bei E-Mail entweder **gesendet** stehen oder eine konkrete Fehlermeldung.
+
+#### Typische Fehlerbilder
+
+- `smtp_not_configured`: `SMTP_HOST` fehlt oder ist leer.
+- `smtp_no_from`: `SMTP_FROM` und `SMTP_USER` sind leer.
+- Auth-Fehler (z. B. `535`): meist falsches Passwort oder kein App-Passwort.
+- Timeout/Verbindungsfehler: Port/Firewall/Provider blockiert SMTP.
+
 Benutzer liegen in `users.db` (SQLite).
