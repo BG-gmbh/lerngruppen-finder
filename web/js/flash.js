@@ -24,9 +24,14 @@
     pwd_incomplete:
       "Zum Passwortwechsel bitte aktuelles Passwort, neues Passwort und Wiederholung ausfüllen.",
     pwd_current_wrong: "Das aktuelle Passwort ist falsch.",
+    banned: "Dein Konto wurde gesperrt. Bitte den Admin kontaktieren.",
   };
 
   var text = messages[code];
+  if (code === "banned") {
+    var custom = (params.get("flash_msg") || "").trim();
+    if (custom) text = custom;
+  }
   if (!text) return;
 
   var ul = document.getElementById("flash-banner");
@@ -48,6 +53,7 @@
   try {
     var u = new URL(window.location.href);
     u.searchParams.delete("flash");
+    u.searchParams.delete("flash_msg");
     window.history.replaceState({}, "", u.pathname + u.search);
   } catch (e) {}
 })();

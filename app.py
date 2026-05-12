@@ -131,6 +131,10 @@ def _ensure_banned_column(db):
         db.execute(
             "ALTER TABLE users ADD COLUMN banned INTEGER NOT NULL DEFAULT 0"
         )
+    if "banned_message" not in names:
+        db.execute(
+            "ALTER TABLE users ADD COLUMN banned_message TEXT NOT NULL DEFAULT 'Dein Konto wurde gesperrt. Bitte den Admin kontaktieren.'"
+        )
     db.commit()
 
 
@@ -298,6 +302,13 @@ def login_required(view):
         if not session.get("user_id"):
             q = urlencode({"flash": "needlogin", "next": request.path})
             return redirect(f"/login.html?{q}")
+        db = get_db()
+        uid = session["user_id"]
+        if is_user_banned(db, uid):
+            msg = banned_message_for_user(db, uid)
+            session.clear()
+            q = urlencode({"flash": "banned", "flash_msg": msg})
+            return redirect(f"/login.html?{q}")
         return view(*args, **kwargs)
 
     return wrapped
@@ -310,8 +321,9 @@ def login_required_api(view):
             return jsonify(error="auth"), 401
         db = get_db()
         if is_user_banned(db, session["user_id"]):
+            msg = banned_message_for_user(db, session["user_id"])
             session.clear()
-            return jsonify(error="banned"), 403
+            return jsonify(error="banned", message=msg), 403
         return view(*args, **kwargs)
 
     return wrapped
@@ -325,8 +337,9 @@ def admin_required(view):
             return redirect(f"/login.html?{q}")
         db = get_db()
         if is_user_banned(db, session["user_id"]):
+            msg = banned_message_for_user(db, session["user_id"])
             session.clear()
-            q = urlencode({"flash": "banned"})
+            q = urlencode({"flash": "banned", "flash_msg": msg})
             return redirect(f"/login.html?{q}")
         if session.get("role") != "admin":
             return redirect("/dashboard.html?flash=admin_only")
@@ -354,6 +367,18 @@ def _user_count(db):
 def is_user_banned(db, user_id):
     row = db.execute("SELECT banned FROM users WHERE id = ?", (user_id,)).fetchone()
     return bool(row and row["banned"])
+
+
+def banned_message_for_user(db, user_id):
+    row = db.execute(
+        "SELECT banned_message FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
+    default_msg = "Dein Konto wurde gesperrt. Bitte den Admin kontaktieren."
+    if row is None:
+        return default_msg
+    msg = (row["banned_message"] or "").strip()
+    return msg or default_msg
 
 
 @app.route("/")
@@ -1243,7 +1268,9 @@ def login():
     if row is None or not check_password_hash(row["password_hash"], password):
         return redirect("/login.html?flash=invalid")
     if row["banned"]:
-        return redirect("/login.html?flash=banned")
+        msg = banned_message_for_user(db, row["id"])
+        q = urlencode({"flash": "banned", "flash_msg": msg})
+        return redirect(f"/login.html?{q}")
 
     session.clear()
     session["user_id"] = row["id"]
