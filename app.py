@@ -2,6 +2,7 @@ import os
 import secrets
 import sqlite3
 from contextlib import closing
+from datetime import datetime
 from functools import wraps
 from pathlib import Path
 from urllib.parse import urlencode
@@ -26,6 +27,19 @@ CHAT_MAX_USERS = 5
 CHAT_BODY_MAX = 500
 app = Flask(__name__, static_folder="web", static_url_path="")
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-nur-lokal-bitte-aendern")
+
+
+def _normalize_appointment_datetime(raw):
+    text = (raw or "").strip()
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M"):
+        try:
+            dt = datetime.strptime(text, fmt)
+            return dt.strftime("%Y-%m-%d %H:%M")
+        except ValueError:
+            continue
+    return None
 
 
 def chat_subject_key(raw):
@@ -944,11 +958,13 @@ def chat_appointment_get():
 def chat_appointment_post():
     data = request.get_json(silent=True) or {}
     subject = chat_subject_key(data.get("subject"))
-    appointment = (data.get("appointment") or "").strip()
+    appointment = _normalize_appointment_datetime(data.get("appointment"))
     if not subject:
         return jsonify(error="invalid_subject"), 400
-    if not appointment:
+    if data.get("appointment") is None or not str(data.get("appointment")).strip():
         return jsonify(error="empty"), 400
+    if not appointment:
+        return jsonify(error="invalid_datetime"), 400
 
     db = get_db()
     uid = session["user_id"]

@@ -498,7 +498,7 @@
   function setAppointment() {
     if (!currentSubject) return;
     var appointment = prompt(
-      "Gib den Termin ein (Ort, Datum und Uhrzeit):",
+      "Gib den Termin ein (Format: YYYY-MM-DD HH:MM):",
       ""
     );
     if (appointment === null) return;
@@ -512,7 +512,11 @@
       body: { subject: currentSubject, appointment: appointment },
     }).then(function (res) {
       if (!res.ok) {
-        setLobbyError("Termin speichern fehlgeschlagen.");
+        if (res.data && res.data.error === "invalid_datetime") {
+          setLobbyError("Ungueltiges Datum. Bitte Format YYYY-MM-DD HH:MM verwenden.");
+        } else {
+          setLobbyError("Termin speichern fehlgeschlagen.");
+        }
         return;
       }
       loadAppointment();
