@@ -15,8 +15,8 @@
   <main class="container container-wide">
     <ul id="flash-banner"></ul>
     <section class="card">
-      <h1>Ersten Admin anlegen</h1>
-      <p class="field-hint">Es gibt noch keine Nutzer. Lege hier <strong>einen</strong> Administrator an. Danach nur noch dieser Admin (oder Codes) können weitere Konten erstellen.</p>
+      <h1>Admin festlegen</h1>
+      <p class="field-hint">Es gibt gerade keinen Administrator. Lege hier mit einem Namen und Passwort einen Admin fest. Wenn der Name schon als Nutzer existiert, wird dieses Konto zum Admin gemacht.</p>
 
       <form method="post" action="/setup" class="stack-form" autocomplete="on">
         <label>
@@ -32,36 +32,11 @@
           <input name="password_confirm" type="password" required minlength="6" autocomplete="new-password">
         </label>
 
-        <fieldset class="subject-levels">
-          <legend>Deine Stärke pro Fach</legend>
-          <p class="field-hint">Pro · Mittel · Noob — später in den Einstellungen änderbar.</p>
-          <div class="subject-row">
-            <span class="subject-name">Deutsch</span>
-            <div class="radio-row">
-              <label class="radio-pill"><input type="radio" name="level_german" value="pro" required><span>Pro</span></label>
-              <label class="radio-pill"><input type="radio" name="level_german" value="medium"><span>Mittel</span></label>
-              <label class="radio-pill"><input type="radio" name="level_german" value="noob"><span>Noob</span></label>
-            </div>
-          </div>
-          <div class="subject-row">
-            <span class="subject-name">Mathe</span>
-            <div class="radio-row">
-              <label class="radio-pill"><input type="radio" name="level_math" value="pro" required><span>Pro</span></label>
-              <label class="radio-pill"><input type="radio" name="level_math" value="medium"><span>Mittel</span></label>
-              <label class="radio-pill"><input type="radio" name="level_math" value="noob"><span>Noob</span></label>
-            </div>
-          </div>
-          <div class="subject-row">
-            <span class="subject-name">Englisch</span>
-            <div class="radio-row">
-              <label class="radio-pill"><input type="radio" name="level_english" value="pro" required><span>Pro</span></label>
-              <label class="radio-pill"><input type="radio" name="level_english" value="medium"><span>Mittel</span></label>
-              <label class="radio-pill"><input type="radio" name="level_english" value="noob"><span>Noob</span></label>
-            </div>
-          </div>
-        </fieldset>
+        <input type="hidden" name="level_german" value="pro">
+        <input type="hidden" name="level_math" value="pro">
+        <input type="hidden" name="level_english" value="pro">
 
-        <button type="submit" class="btn btn-block">Admin-Konto erstellen</button>
+        <button type="submit" class="btn btn-block">Admin festlegen</button>
       </form>
     </section>
   </main>

@@ -11,12 +11,89 @@
 
 Die Seiten kannst du im Editor bearbeiten wie jede andere Website. **Nicht** nur die HTML-Dateien auf einen rein statischen Webspace legen, wenn du Login brauchst — dann ginge die Anmeldung nicht. Auf dem Pi: Server starten, im Browser die URLs öffnen (siehe unten).
 
+## Schnellstart: Web-App starten
+
+Einmalig installieren:
+
+```bash
+cd /Users/admin/benjamin/lerngruppen-finder
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+```
+
+Danach starten:
+
+```bash
+cd /Users/admin/benjamin/lerngruppen-finder
+source venv/bin/activate
+python app.py
+```
+
+Öffnen:
+
+- Lokal: `http://127.0.0.1:5000/`
+- Im WLAN: `http://<SERVER-IP>:5000/`
+
+## Schnellstart: Flutter-App starten
+
+Zuerst Backend starten:
+
+```bash
+cd /Users/admin/benjamin/lerngruppen-finder
+source venv/bin/activate
+python app.py
+```
+
+Dann Flutter Web starten:
+
+```bash
+cd /Users/admin/benjamin/lerngruppen-finder/flutter_app
+flutter pub get
+flutter run -d chrome --dart-define=API_BASE_URL=http://127.0.0.1:5000
+```
+
+Android-Emulator:
+
+```bash
+cd /Users/admin/benjamin/lerngruppen-finder/flutter_app
+flutter pub get
+flutter run --dart-define=API_BASE_URL=http://10.0.2.2:5000
+```
+
+Echtes Handy im gleichen WLAN:
+
+```bash
+cd /Users/admin/benjamin/lerngruppen-finder/flutter_app
+flutter pub get
+flutter run --dart-define=API_BASE_URL=http://<SERVER-IP>:5000
+```
+
+Native Plattformordner ergänzen, falls Flutter sie braucht:
+
+```bash
+cd /Users/admin/benjamin/lerngruppen-finder/flutter_app
+flutter create --platforms=android,ios,web .
+```
+
+Flutter prüfen:
+
+```bash
+flutter doctor
+flutter --version
+```
+
+Hinweis: Der vorhandene Flutter-SDK-Pfad auf diesem Mac meldet, dass diese
+Flutter-Version mindestens macOS 14 braucht. Auf macOS 13 entweder Flutter auf
+eine kompatible Version wechseln oder auf einem neueren System ausführen.
+
 ## Auf dem Raspberry Pi hosten
 
 ```bash
 sudo apt update
 sudo apt install -y python3 python3-venv python3-pip
-cd schul-tinder
+cd lerngruppen-finder
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt

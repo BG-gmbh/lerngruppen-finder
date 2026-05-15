@@ -29,6 +29,26 @@ app = Flask(__name__, static_folder="web", static_url_path="")
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-nur-lokal-bitte-aendern")
 
 
+@app.after_request
+def add_flutter_cors_headers(response):
+    origin = request.headers.get("Origin", "")
+    allowed_prefixes = (
+        "http://localhost:",
+        "http://127.0.0.1:",
+        "http://0.0.0.0:",
+    )
+    if any(origin.startswith(prefix) for prefix in allowed_prefixes):
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Vary"] = "Origin"
+        response.headers["Access-Control-Allow-Headers"] = (
+            "Authorization, Content-Type"
+        )
+        response.headers["Access-Control-Allow-Methods"] = (
+            "GET, POST, PUT, DELETE, OPTIONS"
+        )
+    return response
+
+
 def _normalize_appointment_datetime(raw):
     text = (raw or "").strip()
     if not text:
@@ -122,6 +142,7 @@ def init_db():
         _ensure_user_teacher_email_prefs(db)
         _ensure_chat_tables(db)
         _ensure_invite_codes(db)
+        _ensure_api_tokens(db)
         from shop import ensure_shop_table
 
         ensure_shop_table(db)
@@ -265,6 +286,25 @@ def _ensure_admin_subject_scores(db):
     db.commit()
 
 
+def _ensure_api_tokens(db):
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS api_tokens (
+            token TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_api_tokens_user_id
+        ON api_tokens (user_id)
+        """
+    )
+    db.commit()
+
+
 def _user_level_for_subject(db, user_id, subject):
     col = CHAT_LEVEL_COLUMN[subject]
     row = db.execute(
@@ -331,7 +371,7 @@ def login_required(view):
 def login_required_api(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if not session.get("user_id"):
+        if not _load_api_auth_context():
             return jsonify(error="auth"), 401
         db = get_db()
         if is_user_banned(db, session["user_id"]):
@@ -365,7 +405,7 @@ def admin_required(view):
 def admin_api(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if not session.get("user_id"):
+        if not _load_api_auth_context():
             return jsonify(error="auth"), 401
         if session.get("role") != "admin":
             return jsonify(error="forbidden"), 403
@@ -374,8 +414,45 @@ def admin_api(view):
     return wrapped
 
 
+def _load_api_auth_context():
+    if session.get("user_id"):
+        return True
+    auth = request.headers.get("Authorization", "")
+    if not auth.lower().startswith("bearer "):
+        return False
+    token = auth.split(None, 1)[1].strip()
+    if not token:
+        return False
+    db = get_db()
+    row = db.execute(
+        """
+        SELECT u.id AS id, u.username AS username, u.role AS role
+        FROM api_tokens t
+        JOIN users u ON u.id = t.user_id
+        WHERE t.token = ?
+        """,
+        (token,),
+    ).fetchone()
+    if row is None:
+        return False
+    role = row["role"] if row["role"] in ROLES else "user"
+    session["user_id"] = row["id"]
+    session["username"] = row["username"]
+    session["role"] = role
+    g.api_token = token
+    return True
+
+
 def _user_count(db):
     return int(db.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"])
+
+
+def _admin_count(db):
+    return int(
+        db.execute(
+            "SELECT COUNT(*) AS c FROM users WHERE role = 'admin'"
+        ).fetchone()["c"]
+    )
 
 
 def is_user_banned(db, user_id):
@@ -428,7 +505,7 @@ def register_page_blocked():
 @app.route("/setup.html")
 def setup_page():
     db = get_db()
-    if _user_count(db) > 0:
+    if _admin_count(db) > 0:
         return redirect("/login.html")
     return send_from_directory(app.static_folder, "setup.html")
 
@@ -436,7 +513,7 @@ def setup_page():
 @app.route("/setup", methods=["POST"])
 def setup_create():
     db = get_db()
-    if _user_count(db) > 0:
+    if _admin_count(db) > 0:
         return redirect("/login.html?flash=setup_done")
 
     username = (request.form.get("username") or "").strip()
@@ -450,31 +527,102 @@ def setup_create():
     if password != password2:
         return redirect("/setup.html?flash=mismatch")
 
-    levels = parse_subject_levels(request.form)
-    if levels is None:
-        return redirect("/setup.html?flash=levels")
-
+    levels = parse_subject_levels(request.form) or ("pro", "pro", "pro")
     lg, lm, le = levels
-    try:
+    password_hash = generate_password_hash(password)
+    row = db.execute(
+        "SELECT id FROM users WHERE username = ?",
+        (username,),
+    ).fetchone()
+    if row is not None:
         db.execute(
             """
-            INSERT INTO users (username, password_hash, level_german, level_math, level_english, role)
-            VALUES (?, ?, ?, ?, ?, 'admin')
+            UPDATE users
+            SET password_hash = ?, level_german = ?, level_math = ?,
+                level_english = ?, role = 'admin', banned = 0
+            WHERE id = ?
             """,
-            (username, generate_password_hash(password), lg, lm, le),
+            (password_hash, lg, lm, le, row["id"]),
         )
-        db.commit()
-    except sqlite3.IntegrityError:
-        return redirect("/setup.html?flash=taken")
+        db.execute("DELETE FROM api_tokens WHERE user_id = ?", (row["id"],))
+        new_id = row["id"]
+    else:
+        try:
+            cur = db.execute(
+                """
+                INSERT INTO users (username, password_hash, level_german, level_math, level_english, role)
+                VALUES (?, ?, ?, ?, ?, 'admin')
+                """,
+                (username, password_hash, lg, lm, le),
+            )
+        except sqlite3.IntegrityError:
+            return redirect("/setup.html?flash=taken")
+        new_id = cur.lastrowid
 
-    row = db.execute(
-        "SELECT id FROM users WHERE username = ?", (username,)
-    ).fetchone()
+    try:
+        db.commit()
+    except sqlite3.Error:
+        return redirect("/setup.html?flash=error")
+
     session.clear()
-    session["user_id"] = row["id"]
+    session["user_id"] = new_id
     session["username"] = username
     session["role"] = "admin"
     return redirect("/dashboard.html?flash=setup_done")
+
+
+@app.route("/api/setup", methods=["POST"])
+def api_setup_create():
+    db = get_db()
+    if _admin_count(db) > 0:
+        return jsonify(error="setup_done"), 400
+
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    password2 = data.get("password_confirm") or ""
+
+    if not username or len(username) < 3:
+        return jsonify(error="shortuser"), 400
+    if len(password) < 6:
+        return jsonify(error="shortpass"), 400
+    if password != password2:
+        return jsonify(error="mismatch"), 400
+
+    password_hash = generate_password_hash(password)
+    row = db.execute(
+        "SELECT id FROM users WHERE username = ?",
+        (username,),
+    ).fetchone()
+    if row is not None:
+        db.execute(
+            """
+            UPDATE users
+            SET password_hash = ?, level_german = 'pro', level_math = 'pro',
+                level_english = 'pro', role = 'admin', banned = 0
+            WHERE id = ?
+            """,
+            (password_hash, row["id"]),
+        )
+        db.execute("DELETE FROM api_tokens WHERE user_id = ?", (row["id"],))
+        user_id = row["id"]
+    else:
+        try:
+            cur = db.execute(
+                """
+                INSERT INTO users (username, password_hash, level_german, level_math, level_english, role)
+                VALUES (?, ?, 'pro', 'pro', 'pro', 'admin')
+                """,
+                (username, password_hash),
+            )
+            user_id = cur.lastrowid
+        except sqlite3.IntegrityError:
+            return jsonify(error="taken"), 409
+
+    token = secrets.token_urlsafe(32)
+    db.execute("INSERT INTO api_tokens (token, user_id) VALUES (?, ?)", (token, user_id))
+    db.commit()
+    return jsonify(ok=True, token=token, user=_public_user_payload(db, user_id))
 
 
 @app.route("/admin.html")
@@ -566,6 +714,31 @@ def admin_user_ban():
     db.execute("UPDATE users SET banned = ? WHERE id = ?", (banned, user_id))
     db.commit()
     return jsonify(ok=True)
+
+
+@app.route("/api/admin/users/password", methods=["POST"])
+@admin_api
+def admin_user_password():
+    data = request.get_json(silent=True) or {}
+    try:
+        user_id = int(data.get("user_id") or 0)
+    except (TypeError, ValueError):
+        return jsonify(error="invalid_user"), 400
+    password = data.get("password") or ""
+    if len(password) < 6:
+        return jsonify(error="shortpass"), 400
+
+    db = get_db()
+    row = db.execute("SELECT username FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not row:
+        return jsonify(error="not_found"), 404
+    db.execute(
+        "UPDATE users SET password_hash = ? WHERE id = ?",
+        (generate_password_hash(password), user_id),
+    )
+    db.execute("DELETE FROM api_tokens WHERE user_id = ?", (user_id,))
+    db.commit()
+    return jsonify(ok=True, username=row["username"])
 
 
 @app.route("/api/admin/delete_message/<int:message_id>", methods=["DELETE"])
@@ -708,7 +881,7 @@ def admin_delete_chat(subject):
 @app.route("/api/setup-status", methods=["GET"])
 def setup_status():
     db = get_db()
-    return jsonify(setup_needed=_user_count(db) == 0)
+    return jsonify(setup_needed=_admin_count(db) == 0)
 
 
 @app.route("/einladung.html")
@@ -779,6 +952,67 @@ def invite_redeem():
     session["username"] = username
     session["role"] = "user"
     return redirect("/dashboard.html?flash=redeem_ok")
+
+
+@app.route("/api/invite", methods=["POST"])
+def api_invite_redeem():
+    data = request.get_json(silent=True) or {}
+    code = (data.get("code") or "").strip()
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    password2 = data.get("password_confirm") or ""
+
+    if not code:
+        return jsonify(error="bad_invite"), 400
+    if not username or len(username) < 3:
+        return jsonify(error="shortuser"), 400
+    if len(password) < 6:
+        return jsonify(error="shortpass"), 400
+    if password != password2:
+        return jsonify(error="mismatch"), 400
+
+    db = get_db()
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        inv = db.execute(
+            "SELECT code FROM invite_codes WHERE code = ? AND used_at IS NULL",
+            (code,),
+        ).fetchone()
+        if not inv:
+            db.rollback()
+            return jsonify(error="bad_invite"), 400
+
+        db.execute(
+            """
+            INSERT INTO users (username, password_hash, level_german, level_math, level_english, role)
+            VALUES (?, ?, 'noob', 'noob', 'noob', 'user')
+            """,
+            (username, generate_password_hash(password)),
+        )
+        new_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+        cur = db.execute(
+            """
+            UPDATE invite_codes
+            SET used_at = datetime('now'), used_user_id = ?
+            WHERE code = ? AND used_at IS NULL
+            """,
+            (new_id, code),
+        )
+        if cur.rowcount != 1:
+            db.rollback()
+            return jsonify(error="bad_invite"), 400
+
+        token = secrets.token_urlsafe(32)
+        db.execute(
+            "INSERT INTO api_tokens (token, user_id) VALUES (?, ?)",
+            (token, new_id),
+        )
+        db.commit()
+    except sqlite3.IntegrityError:
+        db.rollback()
+        return jsonify(error="taken"), 409
+
+    return jsonify(ok=True, token=token, user=_public_user_payload(db, new_id))
 
 
 @app.route("/api/admin/invite-codes", methods=["GET"])
@@ -1300,10 +1534,73 @@ def login():
     return redirect("/dashboard.html")
 
 
+def _public_user_payload(db, user_id):
+    row = db.execute(
+        """
+        SELECT username, role, level_german, level_math, level_english,
+               contact_email, notify_laden_email
+        FROM users WHERE id = ?
+        """,
+        (user_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    role = row["role"] if row["role"] in ROLES else "user"
+    return {
+        "user_id": user_id,
+        "username": row["username"],
+        "role": role,
+        "level_german": row["level_german"],
+        "level_math": row["level_math"],
+        "level_english": row["level_english"],
+        "contact_email": row["contact_email"] or "",
+        "notify_laden_email": bool(row["notify_laden_email"]),
+    }
+
+
+@app.route("/api/login", methods=["POST"])
+def api_login():
+    data = request.get_json(silent=True) or request.form
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+
+    db = get_db()
+    row = db.execute(
+        "SELECT id, password_hash, role, banned FROM users WHERE username = ?",
+        (username,),
+    ).fetchone()
+    if row is None or not check_password_hash(row["password_hash"], password):
+        return jsonify(error="invalid"), 401
+    if row["banned"]:
+        msg = banned_message_for_user(db, row["id"])
+        return jsonify(error="banned", message=msg), 403
+
+    token = secrets.token_urlsafe(32)
+    db.execute(
+        "INSERT INTO api_tokens (token, user_id) VALUES (?, ?)",
+        (token, row["id"]),
+    )
+    db.commit()
+    user = _public_user_payload(db, row["id"])
+    return jsonify(ok=True, token=token, user=user)
+
+
 @app.route("/logout", methods=["POST"])
 def logout():
     session.clear()
     return redirect("/login.html?flash=logout")
+
+
+@app.route("/api/logout", methods=["POST"])
+@login_required_api
+def api_logout():
+    token = getattr(g, "api_token", None)
+    if token:
+        db = get_db()
+        db.execute("DELETE FROM api_tokens WHERE token = ?", (token,))
+        db.commit()
+    session.clear()
+    return jsonify(ok=True)
 
 
 def _valid_contact_email(raw):
@@ -1376,35 +1673,82 @@ def profile_update():
     return redirect("/settings.html?flash=saved")
 
 
+@app.route("/api/profile", methods=["POST"])
+@login_required_api
+def api_profile_update():
+    data = request.get_json(silent=True) or {}
+    levels = parse_subject_levels(data)
+    if levels is None:
+        return jsonify(error="levels"), 400
+    lg, lm, le = levels
+    raw_mail = (data.get("contact_email") or "").strip()
+    contact_email = _valid_contact_email(raw_mail)
+    if raw_mail and contact_email is None:
+        return jsonify(error="bad_contact_email"), 400
+    want_notify = data.get("notify_laden_email") in (True, "true", "1", 1)
+    if want_notify and not contact_email:
+        return jsonify(error="notify_no_email"), 400
+    notify_val = 1 if (want_notify and contact_email) else 0
+
+    cur_pwd = data.get("current_password") or ""
+    new_pwd = data.get("new_password") or ""
+    new_pwd2 = data.get("new_password_confirm") or ""
+    pwd_change = bool(cur_pwd or new_pwd or new_pwd2)
+    if pwd_change:
+        if not cur_pwd or not new_pwd or not new_pwd2:
+            return jsonify(error="pwd_incomplete"), 400
+        if len(new_pwd) < 6:
+            return jsonify(error="shortpass"), 400
+        if new_pwd != new_pwd2:
+            return jsonify(error="mismatch"), 400
+
+    db = get_db()
+    uid = session["user_id"]
+    if pwd_change:
+        row = db.execute(
+            "SELECT password_hash FROM users WHERE id = ?",
+            (uid,),
+        ).fetchone()
+        if row is None or not check_password_hash(row["password_hash"], cur_pwd):
+            return jsonify(error="pwd_current_wrong"), 400
+        db.execute(
+            """
+            UPDATE users SET level_german = ?, level_math = ?, level_english = ?,
+                contact_email = ?, notify_laden_email = ?, password_hash = ?
+            WHERE id = ?
+            """,
+            (
+                lg,
+                lm,
+                le,
+                contact_email,
+                notify_val,
+                generate_password_hash(new_pwd),
+                uid,
+            ),
+        )
+    else:
+        db.execute(
+            """
+            UPDATE users SET level_german = ?, level_math = ?, level_english = ?,
+                contact_email = ?, notify_laden_email = ?
+            WHERE id = ?
+            """,
+            (lg, lm, le, contact_email, notify_val, uid),
+        )
+    db.commit()
+    return jsonify(ok=True, user=_public_user_payload(db, uid))
+
+
 @app.route("/api/me")
 def api_me():
-    if not session.get("user_id"):
+    if not _load_api_auth_context():
         return jsonify({}), 401
     db = get_db()
-    row = db.execute(
-        """
-        SELECT username, role, level_german, level_math, level_english,
-               contact_email, notify_laden_email
-        FROM users WHERE id = ?
-        """,
-        (session["user_id"],),
-    ).fetchone()
-    if row is None:
+    user = _public_user_payload(db, session["user_id"])
+    if user is None:
         return jsonify({}), 401
-    r = row["role"] if "role" in row.keys() else None
-    role = r if r in ROLES else "user"
-    ce = row["contact_email"] if "contact_email" in row.keys() else None
-    nl = row["notify_laden_email"] if "notify_laden_email" in row.keys() else 0
-    return jsonify(
-        user_id=session["user_id"],
-        username=row["username"],
-        role=role,
-        level_german=row["level_german"],
-        level_math=row["level_math"],
-        level_english=row["level_english"],
-        contact_email=ce or "",
-        notify_laden_email=bool(nl),
-    )
+    return jsonify(user)
 
 
 from shop import register_shop_routes

@@ -44,8 +44,11 @@
         </label>
         <button type="submit" class="btn btn-block">Login</button>
       </form>
-      <p class="muted">Konto mit Code vom Admin: <a href="/einladung.html">Einladungscode einlösen</a></p>
-      <p class="muted hidden" id="setup-hint">Erste Installation? <a href="/setup.html">Administrator anlegen</a></p>
+      <div class="actions actions-stack">
+        <a class="btn btn-secondary" href="/einladung.html">Mit Code registrieren</a>
+        <a class="btn btn-ghost" id="setup-hint" href="/setup.html">Admin festlegen</a>
+      </div>
+      <p class="muted">„Admin festlegen“ funktioniert nur, wenn gerade kein Admin-Konto existiert.</p>
     </section>
   </main>
   <script src="/js/flash.js"></script>

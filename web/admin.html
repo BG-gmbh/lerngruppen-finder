@@ -99,7 +99,7 @@
 
     <section class="card tab-panel hidden" id="tab-users" role="tabpanel">
       <h2 class="card-title">Nutzer verwalten</h2>
-      <p class="field-hint">Hier siehst du alle Konten. Du kannst Nutzer sperren oder entsperren.</p>
+      <p class="field-hint">Hier siehst du alle Konten. Passwörter werden nicht lesbar gespeichert; du kannst aber ein neues Passwort setzen.</p>
       <ul id="user-list" class="code-list"></ul>
     </section>
 
@@ -206,6 +206,40 @@
             info.textContent += " — gesperrt";
           }
           li.appendChild(info);
+
+          var resetBtn = document.createElement("button");
+          resetBtn.type = "button";
+          resetBtn.className = "btn btn-small btn-secondary";
+          resetBtn.style.marginLeft = "1rem";
+          resetBtn.textContent = "Passwort setzen";
+          resetBtn.addEventListener("click", function () {
+            var pwd = window.prompt("Neues Passwort für " + user.username + " (mind. 6 Zeichen):");
+            if (pwd === null) return;
+            if (pwd.length < 6) {
+              window.alert("Das Passwort muss mindestens 6 Zeichen lang sein.");
+              return;
+            }
+            fetch("/api/admin/users/password", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ user_id: user.id, password: pwd }),
+            })
+              .then(function (r) {
+                return r.json().then(function (data) {
+                  return { ok: r.ok, data: data };
+                });
+              })
+              .then(function (result) {
+                if (!result.ok) {
+                  window.alert("Fehler beim Setzen des Passworts.");
+                  return;
+                }
+                window.alert("Passwort wurde gesetzt.");
+              });
+          });
+          li.appendChild(resetBtn);
+
           var btn = document.createElement("button");
           btn.type = "button";
           btn.className = "btn btn-small";

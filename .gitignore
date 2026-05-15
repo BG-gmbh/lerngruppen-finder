@@ -4,3 +4,7 @@ __pycache__/
 *.py[cod]
 users.db
 .env
+flutter_app/.dart_tool/
+flutter_app/build/
+flutter_app/.flutter-plugins
+flutter_app/.flutter-plugins-dependencies
