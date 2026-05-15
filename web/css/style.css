@@ -61,6 +61,14 @@ a:hover {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.site-header nav > span {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .nav-user {
@@ -101,12 +109,21 @@ a:hover {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.actions-stack {
+  margin-top: 1rem;
 }
 
 @media (min-width: 400px) {
   .actions {
     flex-direction: row;
     justify-content: center;
+  }
+
+  .actions-stack {
+    flex-direction: column;
   }
 }
 

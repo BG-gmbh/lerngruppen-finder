@@ -16,7 +16,7 @@
     register_disabled: "Öffentliche Registrierung ist ausgeschaltet. Bitte Administrator oder Einladungscode.",
     admin_only: "Nur für Administratoren.",
     user_created: "Nutzer wurde angelegt.",
-    setup_done: "Admin-Konto erstellt. Du bist eingeloggt.",
+    setup_done: "Admin-Konto festgelegt. Du bist eingeloggt.",
     bad_invite: "Ungültiger oder bereits benutzter Code.",
     redeem_ok: "Konto erstellt. Willkommen!",
     bad_contact_email: "Bitte eine gültige E-Mail-Adresse eintragen.",
