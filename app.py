@@ -15,7 +15,7 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 
 DATABASE = os.path.join(os.path.dirname(__file__), "users.db")
 LEVELS = frozenset({"pro", "medium", "noob"})
-ROLES = frozenset({"admin", "user"})
+ROLES = frozenset({"dev", "admin", "user"})
 CHAT_SUBJECTS = frozenset({"german", "math", "english"})
 CHAT_SUBJECT_LABELS = {"german": "Deutsch", "math": "Mathe", "english": "Englisch"}
 CHAT_LEVEL_COLUMN = {
@@ -142,6 +142,7 @@ def init_db():
         _ensure_user_teacher_email_prefs(db)
         _ensure_chat_tables(db)
         _ensure_invite_codes(db)
+        _ensure_app_settings(db)
         _ensure_api_tokens(db)
         from shop import ensure_shop_table
 
@@ -176,6 +177,8 @@ def _ensure_banned_column(db):
 def _ensure_user_teacher_email_prefs(db):
     cur = db.execute("PRAGMA table_info(users)")
     names = {row[1] for row in cur.fetchall()}
+    if "school" not in names:
+        db.execute("ALTER TABLE users ADD COLUMN school TEXT NOT NULL DEFAULT ''")
     if "contact_email" not in names:
         db.execute("ALTER TABLE users ADD COLUMN contact_email TEXT")
     if "notify_laden_email" not in names:
@@ -260,12 +263,20 @@ def _ensure_invite_codes(db):
         CREATE TABLE IF NOT EXISTS invite_codes (
             code TEXT PRIMARY KEY,
             created_by INTEGER NOT NULL,
+            school TEXT NOT NULL DEFAULT '',
+            role TEXT NOT NULL DEFAULT 'user',
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             used_at TEXT,
             used_user_id INTEGER
         )
         """
     )
+    cur = db.execute("PRAGMA table_info(invite_codes)")
+    names = {row[1] for row in cur.fetchall()}
+    if "school" not in names:
+        db.execute("ALTER TABLE invite_codes ADD COLUMN school TEXT NOT NULL DEFAULT ''")
+    if "role" not in names:
+        db.execute("ALTER TABLE invite_codes ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
     db.commit()
 
 
@@ -303,6 +314,53 @@ def _ensure_api_tokens(db):
         """
     )
     db.commit()
+
+
+def _ensure_app_settings(db):
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
+    db.commit()
+
+
+def app_setting(db, key, default=""):
+    row = db.execute(
+        "SELECT value FROM app_settings WHERE key = ?",
+        (key,),
+    ).fetchone()
+    if row is None:
+        return default
+    return row["value"] or default
+
+
+def set_app_setting(db, key, value):
+    db.execute(
+        """
+        INSERT INTO app_settings (key, value)
+        VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """,
+        (key, value),
+    )
+
+
+def school_logo_key(school):
+    school = (school or "").strip()
+    return f"school_logo_url::{school}" if school else "school_logo_url"
+
+
+def school_logo_url_for(db, school):
+    school = (school or "").strip()
+    if school:
+        value = app_setting(db, school_logo_key(school))
+        if value:
+            return value
+    return app_setting(db, "school_logo_url")
 
 
 def _user_level_for_subject(db, user_id, subject):
@@ -395,7 +453,7 @@ def admin_required(view):
             session.clear()
             q = urlencode({"flash": "banned", "flash_msg": msg})
             return redirect(f"/login.html?{q}")
-        if session.get("role") != "admin":
+        if session.get("role") not in ("admin", "dev"):
             return redirect("/dashboard.html?flash=admin_only")
         return view(*args, **kwargs)
 
@@ -407,7 +465,7 @@ def admin_api(view):
     def wrapped(*args, **kwargs):
         if not _load_api_auth_context():
             return jsonify(error="auth"), 401
-        if session.get("role") != "admin":
+        if session.get("role") not in ("admin", "dev"):
             return jsonify(error="forbidden"), 403
         return view(*args, **kwargs)
 
@@ -426,7 +484,7 @@ def _load_api_auth_context():
     db = get_db()
     row = db.execute(
         """
-        SELECT u.id AS id, u.username AS username, u.role AS role
+        SELECT u.id AS id, u.username AS username, u.role AS role, u.school AS school
         FROM api_tokens t
         JOIN users u ON u.id = t.user_id
         WHERE t.token = ?
@@ -439,8 +497,45 @@ def _load_api_auth_context():
     session["user_id"] = row["id"]
     session["username"] = row["username"]
     session["role"] = role
+    session["school"] = row["school"] or ""
     g.api_token = token
     return True
+
+
+def is_dev_session():
+    return session.get("role") == "dev"
+
+
+def admin_school(db):
+    if "school" in session:
+        return session.get("school") or ""
+    uid = session.get("user_id")
+    if not uid:
+        return ""
+    row = db.execute("SELECT school FROM users WHERE id = ?", (uid,)).fetchone()
+    school = (row["school"] if row else "") or ""
+    session["school"] = school
+    return school
+
+
+def scoped_user_where(db, table_alias="u"):
+    if is_dev_session():
+        return "", ()
+    return f" WHERE {table_alias}.school = ? AND {table_alias}.role != 'dev'", (
+        admin_school(db),
+    )
+
+
+def can_access_user(db, user_id):
+    row = db.execute(
+        "SELECT role, school FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
+    if row is None:
+        return False
+    if is_dev_session():
+        return True
+    return row["role"] != "dev" and (row["school"] or "") == admin_school(db)
 
 
 def _user_count(db):
@@ -450,7 +545,7 @@ def _user_count(db):
 def _admin_count(db):
     return int(
         db.execute(
-            "SELECT COUNT(*) AS c FROM users WHERE role = 'admin'"
+            "SELECT COUNT(*) AS c FROM users WHERE role IN ('admin', 'dev')"
         ).fetchone()["c"]
     )
 
@@ -539,7 +634,7 @@ def setup_create():
             """
             UPDATE users
             SET password_hash = ?, level_german = ?, level_math = ?,
-                level_english = ?, role = 'admin', banned = 0
+                level_english = ?, role = 'dev', banned = 0
             WHERE id = ?
             """,
             (password_hash, lg, lm, le, row["id"]),
@@ -551,7 +646,7 @@ def setup_create():
             cur = db.execute(
                 """
                 INSERT INTO users (username, password_hash, level_german, level_math, level_english, role)
-                VALUES (?, ?, ?, ?, ?, 'admin')
+                VALUES (?, ?, ?, ?, ?, 'dev')
                 """,
                 (username, password_hash, lg, lm, le),
             )
@@ -567,7 +662,8 @@ def setup_create():
     session.clear()
     session["user_id"] = new_id
     session["username"] = username
-    session["role"] = "admin"
+    session["role"] = "dev"
+    session["school"] = ""
     return redirect("/dashboard.html?flash=setup_done")
 
 
@@ -599,7 +695,7 @@ def api_setup_create():
             """
             UPDATE users
             SET password_hash = ?, level_german = 'pro', level_math = 'pro',
-                level_english = 'pro', role = 'admin', banned = 0
+                level_english = 'pro', role = 'dev', banned = 0
             WHERE id = ?
             """,
             (password_hash, row["id"]),
@@ -611,7 +707,7 @@ def api_setup_create():
             cur = db.execute(
                 """
                 INSERT INTO users (username, password_hash, level_german, level_math, level_english, role)
-                VALUES (?, ?, 'pro', 'pro', 'pro', 'admin')
+                VALUES (?, ?, 'pro', 'pro', 'pro', 'dev')
                 """,
                 (username, password_hash),
             )
@@ -652,16 +748,25 @@ def admin_create_user():
     role = "admin" if request.form.get("is_admin") == "1" else "user"
     if role not in ROLES:
         role = "user"
+    if role == "dev" and not is_dev_session():
+        role = "user"
+    if role == "admin" and not is_dev_session():
+        role = "user"
 
     lg, lm, le = levels
     db = get_db()
+    school = (request.form.get("school") or "").strip()
+    if not is_dev_session():
+        school = admin_school(db)
+    if len(school) > 120:
+        return redirect("/admin.html?flash=invalid_school")
     try:
         db.execute(
             """
-            INSERT INTO users (username, password_hash, level_german, level_math, level_english, role)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO users (username, password_hash, level_german, level_math, level_english, role, school)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (username, generate_password_hash(password), lg, lm, le, role),
+            (username, generate_password_hash(password), lg, lm, le, role, school),
         )
         db.commit()
     except sqlite3.IntegrityError:
@@ -674,8 +779,15 @@ def admin_create_user():
 @admin_api
 def admin_user_list():
     db = get_db()
+    where, params = scoped_user_where(db)
     rows = db.execute(
-        "SELECT id, username, role, banned FROM users ORDER BY username COLLATE NOCASE"
+        f"""
+        SELECT id, username, role, school, banned, banned_message
+        FROM users u
+        {where}
+        ORDER BY username COLLATE NOCASE
+        """,
+        params,
     ).fetchall()
     return jsonify(
         users=[
@@ -683,7 +795,9 @@ def admin_user_list():
                 "id": r["id"],
                 "username": r["username"],
                 "role": r["role"],
+                "school": r["school"] or "",
                 "banned": bool(r["banned"]),
+                "banned_message": r["banned_message"] or "",
             }
             for r in rows
         ]
@@ -705,15 +819,83 @@ def admin_user_ban():
         banned = 0
     else:
         return jsonify(error="invalid_ban"), 400
+    message = (data.get("message") or "").strip()
+    if banned and not message:
+        return jsonify(error="ban_message_required"), 400
+    if len(message) > 500:
+        return jsonify(error="ban_message_too_long"), 400
     if user_id == session["user_id"]:
         return jsonify(error="self_ban"), 400
     db = get_db()
-    row = db.execute("SELECT 1 FROM users WHERE id = ?", (user_id,)).fetchone()
-    if not row:
+    if not can_access_user(db, user_id):
         return jsonify(error="not_found"), 404
-    db.execute("UPDATE users SET banned = ? WHERE id = ?", (banned, user_id))
+    if banned:
+        db.execute(
+            "UPDATE users SET banned = ?, banned_message = ? WHERE id = ?",
+            (banned, message, user_id),
+        )
+    else:
+        db.execute("UPDATE users SET banned = ? WHERE id = ?", (banned, user_id))
     db.commit()
     return jsonify(ok=True)
+
+
+@app.route("/api/admin/users/<int:user_id>", methods=["PUT"])
+@admin_api
+def admin_user_update(user_id):
+    if not is_dev_session():
+        return jsonify(error="forbidden"), 403
+    data = request.get_json(silent=True) or {}
+    role = (data.get("role") or "user").strip()
+    school = (data.get("school") or "").strip()
+    if role not in ROLES:
+        return jsonify(error="invalid_role"), 400
+    if len(school) > 120:
+        return jsonify(error="invalid_school"), 400
+    db = get_db()
+    row = db.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+    if row is None:
+        return jsonify(error="not_found"), 404
+    db.execute(
+        "UPDATE users SET role = ?, school = ? WHERE id = ?",
+        (role, school, user_id),
+    )
+    if user_id == session.get("user_id"):
+        session["role"] = role
+        session["school"] = school
+    else:
+        db.execute("DELETE FROM api_tokens WHERE user_id = ?", (user_id,))
+    db.commit()
+    return jsonify(ok=True)
+
+
+@app.route("/api/admin/app-settings", methods=["GET"])
+@admin_api
+def admin_app_settings_get():
+    db = get_db()
+    school = (request.args.get("school") or "").strip() if is_dev_session() else admin_school(db)
+    return jsonify(school_logo_url=school_logo_url_for(db, school), school=school)
+
+
+@app.route("/api/admin/app-settings", methods=["POST"])
+@admin_api
+def admin_app_settings_post():
+    data = request.get_json(silent=True) or {}
+    school_logo_url = (data.get("school_logo_url") or "").strip()
+    if len(school_logo_url) > 1000:
+        return jsonify(error="invalid_logo_url"), 400
+    if school_logo_url and not (
+        school_logo_url.startswith("http://")
+        or school_logo_url.startswith("https://")
+    ):
+        return jsonify(error="invalid_logo_url"), 400
+    db = get_db()
+    school = (data.get("school") or "").strip() if is_dev_session() else admin_school(db)
+    if len(school) > 120:
+        return jsonify(error="invalid_school"), 400
+    set_app_setting(db, school_logo_key(school), school_logo_url)
+    db.commit()
+    return jsonify(ok=True, school_logo_url=school_logo_url, school=school)
 
 
 @app.route("/api/admin/users/password", methods=["POST"])
@@ -729,9 +911,9 @@ def admin_user_password():
         return jsonify(error="shortpass"), 400
 
     db = get_db()
-    row = db.execute("SELECT username FROM users WHERE id = ?", (user_id,)).fetchone()
-    if not row:
+    if not can_access_user(db, user_id):
         return jsonify(error="not_found"), 404
+    row = db.execute("SELECT username FROM users WHERE id = ?", (user_id,)).fetchone()
     db.execute(
         "UPDATE users SET password_hash = ? WHERE id = ?",
         (generate_password_hash(password), user_id),
@@ -745,8 +927,16 @@ def admin_user_password():
 @admin_api
 def admin_delete_message(message_id):
     db = get_db()
-    row = db.execute("SELECT id FROM chat_messages WHERE id = ?", (message_id,)).fetchone()
-    if not row:
+    row = db.execute(
+        """
+        SELECT m.id, u.school, u.role
+        FROM chat_messages m
+        JOIN users u ON u.id = m.user_id
+        WHERE m.id = ?
+        """,
+        (message_id,),
+    ).fetchone()
+    if not row or (not is_dev_session() and (row["role"] == "dev" or (row["school"] or "") != admin_school(db))):
         return jsonify(error="message_not_found"), 404
     db.execute("DELETE FROM chat_messages WHERE id = ?", (message_id,))
     db.commit()
@@ -759,14 +949,35 @@ def admin_get_chats():
     db = get_db()
     result = []
     for subject in CHAT_SUBJECTS:
-        count = db.execute(
-            "SELECT COUNT(*) as c FROM chat_messages WHERE subject = ?",
-            (subject,),
-        ).fetchone()["c"]
-        rating_n = db.execute(
-            "SELECT COUNT(*) as c FROM chat_ratings WHERE subject = ?",
-            (subject,),
-        ).fetchone()["c"]
+        if is_dev_session():
+            count = db.execute(
+                "SELECT COUNT(*) as c FROM chat_messages WHERE subject = ?",
+                (subject,),
+            ).fetchone()["c"]
+            rating_n = db.execute(
+                "SELECT COUNT(*) as c FROM chat_ratings WHERE subject = ?",
+                (subject,),
+            ).fetchone()["c"]
+        else:
+            school = admin_school(db)
+            count = db.execute(
+                """
+                SELECT COUNT(*) as c
+                FROM chat_messages m
+                JOIN users u ON u.id = m.user_id
+                WHERE m.subject = ? AND u.school = ? AND u.role != 'dev'
+                """,
+                (subject, school),
+            ).fetchone()["c"]
+            rating_n = db.execute(
+                """
+                SELECT COUNT(*) as c
+                FROM chat_ratings r
+                JOIN users u ON u.id = r.user_id
+                WHERE r.subject = ? AND u.school = ? AND u.role != 'dev'
+                """,
+                (subject, school),
+            ).fetchone()["c"]
         result.append(
             {
                 "subject": subject,
@@ -782,8 +993,13 @@ def admin_get_chats():
 @admin_api
 def admin_list_ratings():
     db = get_db()
+    school_filter = ""
+    params = []
+    if not is_dev_session():
+        school_filter = "WHERE u.school = ? AND u.role != 'dev'"
+        params.append(admin_school(db))
     rows = db.execute(
-        """
+        f"""
         SELECT r.subject AS subject, r.user_id AS user_id, u.username AS username,
                r.rating AS rating, r.comment AS comment, r.created_at AS created_at,
                s.points AS admin_points, s.note AS admin_note
@@ -791,9 +1007,11 @@ def admin_list_ratings():
         JOIN users u ON u.id = r.user_id
         LEFT JOIN admin_subject_scores s
           ON s.user_id = r.user_id AND s.subject = r.subject
+        {school_filter}
         ORDER BY r.created_at DESC
         LIMIT 500
-        """
+        """,
+        params,
     ).fetchall()
     db.commit()
     return jsonify(
@@ -838,8 +1056,7 @@ def admin_put_subject_score():
         return jsonify(error="invalid_note"), 400
 
     db = get_db()
-    urow = db.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
-    if not urow:
+    if not can_access_user(db, user_id):
         db.commit()
         return jsonify(error="not_found"), 404
     admin_id = session["user_id"]
@@ -867,6 +1084,8 @@ def admin_put_subject_score():
 @app.route("/api/admin/delete_chat/<subject>", methods=["DELETE"])
 @admin_api
 def admin_delete_chat(subject):
+    if not is_dev_session():
+        return jsonify(error="forbidden"), 403
     if subject not in CHAT_SUBJECTS:
         return jsonify(error="invalid_subject"), 400
     db = get_db()
@@ -914,7 +1133,7 @@ def invite_redeem():
     try:
         db.execute("BEGIN IMMEDIATE")
         inv = db.execute(
-            "SELECT code FROM invite_codes WHERE code = ? AND used_at IS NULL",
+            "SELECT code, school, role FROM invite_codes WHERE code = ? AND used_at IS NULL",
             (code,),
         ).fetchone()
         if not inv:
@@ -923,10 +1142,15 @@ def invite_redeem():
 
         db.execute(
             """
-            INSERT INTO users (username, password_hash, level_german, level_math, level_english, role)
-            VALUES (?, ?, 'noob', 'noob', 'noob', 'user')
+            INSERT INTO users (username, password_hash, level_german, level_math, level_english, role, school)
+            VALUES (?, ?, 'noob', 'noob', 'noob', ?, ?)
             """,
-            (username, generate_password_hash(password)),
+            (
+                username,
+                generate_password_hash(password),
+                inv["role"] if inv["role"] in ROLES else "user",
+                inv["school"] or "",
+            ),
         )
         new_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
 
@@ -950,7 +1174,8 @@ def invite_redeem():
     session.clear()
     session["user_id"] = new_id
     session["username"] = username
-    session["role"] = "user"
+    session["role"] = inv["role"] if inv["role"] in ROLES else "user"
+    session["school"] = inv["school"] or ""
     return redirect("/dashboard.html?flash=redeem_ok")
 
 
@@ -975,7 +1200,7 @@ def api_invite_redeem():
     try:
         db.execute("BEGIN IMMEDIATE")
         inv = db.execute(
-            "SELECT code FROM invite_codes WHERE code = ? AND used_at IS NULL",
+            "SELECT code, school, role FROM invite_codes WHERE code = ? AND used_at IS NULL",
             (code,),
         ).fetchone()
         if not inv:
@@ -984,10 +1209,15 @@ def api_invite_redeem():
 
         db.execute(
             """
-            INSERT INTO users (username, password_hash, level_german, level_math, level_english, role)
-            VALUES (?, ?, 'noob', 'noob', 'noob', 'user')
+            INSERT INTO users (username, password_hash, level_german, level_math, level_english, role, school)
+            VALUES (?, ?, 'noob', 'noob', 'noob', ?, ?)
             """,
-            (username, generate_password_hash(password)),
+            (
+                username,
+                generate_password_hash(password),
+                inv["role"] if inv["role"] in ROLES else "user",
+                inv["school"] or "",
+            ),
         )
         new_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
         cur = db.execute(
@@ -1019,34 +1249,59 @@ def api_invite_redeem():
 @admin_api
 def admin_invite_list():
     db = get_db()
+    where = "WHERE used_at IS NULL"
+    params = []
+    if not is_dev_session():
+        where += " AND school = ?"
+        params.append(admin_school(db))
     rows = db.execute(
-        """
-        SELECT code, created_at
+        f"""
+        SELECT code, school, role, created_at
         FROM invite_codes
-        WHERE used_at IS NULL
+        {where}
         ORDER BY created_at DESC
         LIMIT 100
-        """
+        """,
+        params,
     ).fetchall()
     return jsonify(
-        codes=[{"code": r["code"], "created_at": r["created_at"]} for r in rows]
+        codes=[
+            {
+                "code": r["code"],
+                "school": r["school"] or "",
+                "role": r["role"] or "user",
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]
     )
 
 
 @app.route("/api/admin/invite-codes", methods=["POST"])
 @admin_api
 def admin_invite_create():
+    data = request.get_json(silent=True) or {}
+    school = (data.get("school") or "").strip()
+    role = (data.get("role") or "user").strip()
+    if role not in ROLES:
+        return jsonify(error="invalid_role"), 400
+    if not is_dev_session():
+        school = admin_school(get_db())
+        if role == "dev":
+            return jsonify(error="forbidden"), 403
+    if len(school) > 120:
+        return jsonify(error="invalid_school"), 400
     db = get_db()
     uid = session["user_id"]
     for _ in range(12):
         code = secrets.token_hex(6)
         try:
             db.execute(
-                "INSERT INTO invite_codes (code, created_by) VALUES (?, ?)",
-                (code, uid),
+                "INSERT INTO invite_codes (code, created_by, school, role) VALUES (?, ?, ?, ?)",
+                (code, uid, school, role),
             )
             db.commit()
-            return jsonify(code=code, created_by=uid)
+            return jsonify(code=code, created_by=uid, school=school, role=role)
         except sqlite3.IntegrityError:
             db.rollback()
             continue
@@ -1511,7 +1766,7 @@ def login():
 
     db = get_db()
     row = db.execute(
-        "SELECT id, password_hash, role, banned FROM users WHERE username = ?",
+        "SELECT id, password_hash, role, school, banned FROM users WHERE username = ?",
         (username,),
     ).fetchone()
 
@@ -1527,6 +1782,7 @@ def login():
     session["username"] = username
     r = row["role"] if "role" in row.keys() else None
     session["role"] = r if r in ROLES else "user"
+    session["school"] = row["school"] or ""
 
     next_url = (request.form.get("next") or request.args.get("next") or "").strip()
     if next_url.startswith("/") and not next_url.startswith("//"):
@@ -1537,7 +1793,7 @@ def login():
 def _public_user_payload(db, user_id):
     row = db.execute(
         """
-        SELECT username, role, level_german, level_math, level_english,
+        SELECT username, role, school, level_german, level_math, level_english,
                contact_email, notify_laden_email
         FROM users WHERE id = ?
         """,
@@ -1550,11 +1806,13 @@ def _public_user_payload(db, user_id):
         "user_id": user_id,
         "username": row["username"],
         "role": role,
+        "school": row["school"] or "",
         "level_german": row["level_german"],
         "level_math": row["level_math"],
         "level_english": row["level_english"],
         "contact_email": row["contact_email"] or "",
         "notify_laden_email": bool(row["notify_laden_email"]),
+        "school_logo_url": school_logo_url_for(db, row["school"] or ""),
     }
 
 

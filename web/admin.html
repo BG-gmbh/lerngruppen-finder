@@ -135,6 +135,10 @@
           <input id="shop-points-price" type="number" min="0" max="1000000" value="0" step="1">
         </label>
         <label>
+          Schule (leer = alle Schulen)
+          <input id="shop-school" type="text" maxlength="120" placeholder="z. B. Schule A" autocomplete="off">
+        </label>
+        <label>
           Sortierung (kleinere Zahl zuerst)
           <input id="shop-sort" type="number" value="0" step="1">
         </label>
@@ -167,6 +171,10 @@
         <label>
           Anzeigename (optional)
           <input id="teacher-name" type="text" maxlength="120" placeholder="z. B. Frau Müller">
+        </label>
+        <label>
+          Schule
+          <input id="teacher-school" type="text" maxlength="120" placeholder="z. B. Schule A">
         </label>
         <button type="submit" class="btn">Lehrer hinzufügen</button>
       </form>
@@ -246,11 +254,22 @@
           btn.style.marginLeft = "1rem";
           btn.textContent = user.banned ? "Entsperren" : "Sperren";
           btn.addEventListener("click", function () {
+            var nextBan = !user.banned;
+            var message = "";
+            if (nextBan) {
+              message = window.prompt("Grund für die Sperre von " + user.username + ":", user.banned_message || "");
+              if (message === null) return;
+              message = message.trim();
+              if (!message) {
+                window.alert("Bitte einen Sperrgrund eingeben.");
+                return;
+              }
+            }
             fetch("/api/admin/users/ban", {
               method: "POST",
               credentials: "same-origin",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ user_id: user.id, ban: !user.banned }),
+              body: JSON.stringify({ user_id: user.id, ban: nextBan, message: message }),
             })
               .then(function (r) {
                 return r.json().then(function (data) {
@@ -332,9 +351,30 @@
               codeEl.textContent = c.code;
               var meta = document.createElement("span");
               meta.className = "muted";
-              meta.textContent = " (" + c.created_at + ")";
+              meta.textContent =
+                " (" +
+                c.created_at +
+                ", Schule: " +
+                (c.school || "keine") +
+                ", Rolle: " +
+                (c.role || "user") +
+                ")";
               li.appendChild(codeEl);
               li.appendChild(meta);
+              var copy = document.createElement("button");
+              copy.type = "button";
+              copy.className = "btn btn-small btn-secondary";
+              copy.style.marginLeft = "0.75rem";
+              copy.textContent = "Kopieren";
+              copy.addEventListener("click", function () {
+                navigator.clipboard.writeText(c.code).then(function () {
+                  copy.textContent = "Kopiert";
+                  window.setTimeout(function () {
+                    copy.textContent = "Kopieren";
+                  }, 1200);
+                });
+              });
+              li.appendChild(copy);
               ul.appendChild(li);
             });
           });
@@ -343,7 +383,18 @@
       document.getElementById("btn-new-code").addEventListener("click", function () {
         var out = document.getElementById("new-code-out");
         out.textContent = "";
-        fetch("/api/admin/invite-codes", { method: "POST", credentials: "same-origin" })
+        var school = window.prompt("Schule für diesen Code:", "");
+        if (school === null) return;
+        school = school.trim();
+        var role = window.prompt("Rolle für diesen Code: user, admin oder dev", "user");
+        if (role === null) return;
+        role = role.trim() || "user";
+        fetch("/api/admin/invite-codes", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ school: school, role: role }),
+        })
           .then(function (r) {
             return r.json().then(function (d) {
               return { ok: r.ok, d: d };
@@ -354,7 +405,13 @@
               out.textContent = "Code konnte nicht erzeugt werden.";
               return;
             }
-            out.textContent = "Neuer Code (einmal kopieren): " + x.d.code;
+            out.textContent =
+              "Neuer Code (einmal kopieren): " +
+              x.d.code +
+              " · " +
+              (x.d.school || "keine Schule") +
+              " · " +
+              (x.d.role || "user");
             loadCodes();
           });
       });
@@ -559,6 +616,7 @@
         document.getElementById("shop-description").value = "";
         document.getElementById("shop-price").value = "";
         document.getElementById("shop-points-price").value = "0";
+        document.getElementById("shop-school").value = "";
         document.getElementById("shop-sort").value = "0";
         document.getElementById("shop-active").checked = true;
         document.getElementById("shop-save-btn").textContent = "Anlegen";
@@ -573,6 +631,7 @@
           it.points_price != null ? it.points_price : 0
         );
         document.getElementById("shop-sort").value = String(it.sort_order != null ? it.sort_order : 0);
+        document.getElementById("shop-school").value = it.school || "";
         document.getElementById("shop-active").checked = !!it.active;
         document.getElementById("shop-save-btn").textContent = "Aktualisieren";
       }
@@ -601,7 +660,8 @@
                 (it.active ? "" : "[inaktiv] ") +
                 it.title +
                 (it.price_hint ? " — " + it.price_hint : "") +
-                (it.points_price > 0 ? " — " + it.points_price + " Punkte" : "");
+                (it.points_price > 0 ? " — " + it.points_price + " Punkte" : "") +
+                (it.school ? " — " + it.school : " — alle Schulen");
               li.appendChild(info);
               var edit = document.createElement("button");
               edit.type = "button";
@@ -711,7 +771,8 @@
               span.textContent =
                 (t.active ? "" : "[inaktiv] ") +
                 t.email +
-                (t.display_name ? " (" + t.display_name + ")" : "");
+                (t.display_name ? " (" + t.display_name + ")" : "") +
+                (t.school ? " — " + t.school : "");
               li.appendChild(span);
               var del = document.createElement("button");
               del.type = "button";
@@ -747,11 +808,12 @@
         e.preventDefault();
         var email = document.getElementById("teacher-email").value.trim();
         var display_name = document.getElementById("teacher-name").value.trim();
+        var school = document.getElementById("teacher-school").value.trim();
         fetch("/api/admin/teachers", {
           method: "POST",
           credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: email, display_name: display_name }),
+          body: JSON.stringify({ email: email, display_name: display_name, school: school }),
         })
           .then(function (r) {
             return r.json().then(function (d) {
@@ -771,6 +833,7 @@
             }
             document.getElementById("teacher-email").value = "";
             document.getElementById("teacher-name").value = "";
+            document.getElementById("teacher-school").value = "";
             loadTeachers();
           });
       });
@@ -783,6 +846,7 @@
           description: document.getElementById("shop-description").value.trim(),
           price_hint: document.getElementById("shop-price").value.trim(),
           points_price: parseInt(document.getElementById("shop-points-price").value, 10) || 0,
+          school: document.getElementById("shop-school").value.trim(),
           sort_order: parseInt(document.getElementById("shop-sort").value, 10) || 0,
           active: document.getElementById("shop-active").checked,
         };

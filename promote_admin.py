@@ -1,9 +1,9 @@
 """
-Setzt die Rolle eines bestehenden Nutzers auf 'admin'.
+Setzt die Rolle eines bestehenden Nutzers auf 'admin' oder 'dev'.
 
 Aufruf (im Projektordner, venv aktiv oder mit system-python3):
 
-  python promote_admin.py DEIN_BENUTZERNAME
+  python promote_admin.py DEIN_BENUTZERNAME [admin|dev]
 
 Danach neu einloggen (Session kennt die alte Rolle noch, bis Logout/Login).
 """
@@ -12,12 +12,16 @@ import sqlite3
 import sys
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: python promote_admin.py USERNAME", file=sys.stderr)
+    if len(sys.argv) not in (2, 3):
+        print("Usage: python promote_admin.py USERNAME [admin|dev]", file=sys.stderr)
         sys.exit(2)
     username = sys.argv[1].strip()
+    role = sys.argv[2].strip() if len(sys.argv) == 3 else "admin"
     if not username:
         print("Username empty.", file=sys.stderr)
+        sys.exit(2)
+    if role not in ("admin", "dev"):
+        print("Role must be 'admin' or 'dev'.", file=sys.stderr)
         sys.exit(2)
 
     db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "users.db")
@@ -28,8 +32,8 @@ def main():
     conn = sqlite3.connect(db_path)
     try:
         cur = conn.execute(
-            "UPDATE users SET role = 'admin' WHERE username = ?",
-            (username,),
+            "UPDATE users SET role = ? WHERE username = ?",
+            (role, username),
         )
         conn.commit()
         n = cur.rowcount
@@ -45,7 +49,7 @@ def main():
         finally:
             c2.close()
         sys.exit(1)
-    print(f"OK: {username!r} is now admin. Log out in the browser, then log in again.")
+    print(f"OK: {username!r} is now {role}. Log out in the browser, then log in again.")
     sys.exit(0)
 
 
