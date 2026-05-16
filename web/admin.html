@@ -274,39 +274,41 @@
           }
           li.appendChild(info);
 
-          var classBtn = document.createElement("button");
-          classBtn.type = "button";
-          classBtn.className = "btn btn-small btn-secondary";
-          classBtn.style.marginLeft = "1rem";
-          classBtn.textContent = "Klasse setzen";
-          classBtn.addEventListener("click", function () {
-            var nextClass = window.prompt("Klasse für " + user.username + ":", user.class_name || "");
-            if (nextClass === null) return;
-            nextClass = nextClass.trim();
-            if (nextClass.length > 20) {
-              window.alert("Die Klasse darf höchstens 20 Zeichen lang sein.");
-              return;
-            }
-            fetch("/api/admin/users/class", {
-              method: "POST",
-              credentials: "same-origin",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ user_id: user.id, class_name: nextClass }),
-            })
-              .then(function (r) {
-                return r.json().then(function (data) {
-                  return { ok: r.ok, data: data };
-                });
+          if (window.__currentRole === "admin" || window.__currentRole === "dev") {
+            var classBtn = document.createElement("button");
+            classBtn.type = "button";
+            classBtn.className = "btn btn-small btn-secondary";
+            classBtn.style.marginLeft = "1rem";
+            classBtn.textContent = "Klasse setzen";
+            classBtn.addEventListener("click", function () {
+              var nextClass = window.prompt("Klasse für " + user.username + ":", user.class_name || "");
+              if (nextClass === null) return;
+              nextClass = nextClass.trim();
+              if (nextClass.length > 20) {
+                window.alert("Die Klasse darf höchstens 20 Zeichen lang sein.");
+                return;
+              }
+              fetch("/api/admin/users/class", {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ user_id: user.id, class_name: nextClass }),
               })
-              .then(function (result) {
-                if (!result.ok) {
-                  window.alert("Fehler beim Speichern der Klasse.");
-                  return;
-                }
-                loadUsers();
-              });
-          });
-          li.appendChild(classBtn);
+                .then(function (r) {
+                  return r.json().then(function (data) {
+                    return { ok: r.ok, data: data };
+                  });
+                })
+                .then(function (result) {
+                  if (!result.ok) {
+                    window.alert("Fehler beim Speichern der Klasse.");
+                    return;
+                  }
+                  loadUsers();
+                });
+            });
+            li.appendChild(classBtn);
+          }
 
           var resetBtn = document.createElement("button");
           resetBtn.type = "button";
@@ -482,9 +484,14 @@
         var school = window.prompt("Schule für diesen Code:", "");
         if (school === null) return;
         school = school.trim();
-        var className = window.prompt("Klasse für diesen Code (optional, z. B. 8a):", "");
-        if (className === null) return;
-        className = className.trim();
+        var className = "";
+        if (window.__currentRole === "teacher") {
+          className = window.__currentClass || "";
+        } else {
+          className = window.prompt("Klasse für diesen Code (optional, z. B. 8a):", "");
+          if (className === null) return;
+          className = className.trim();
+        }
         if (className.length > 20) {
           window.alert("Die Klasse darf höchstens 20 Zeichen lang sein.");
           return;
@@ -532,6 +539,21 @@
         if (data && data.username) {
           document.getElementById("nav-username").textContent = data.username;
           window.__currentRole = data.role || "user";
+          window.__currentClass = data.class_name || "";
+          if (data.role === "teacher") {
+            var accountClass = document.querySelector('input[name="class_name"]');
+            if (accountClass) {
+              accountClass.value = window.__currentClass;
+              accountClass.readOnly = true;
+              accountClass.placeholder = window.__currentClass || "keine Klasse zugewiesen";
+            }
+            var shopClass = document.getElementById("shop-class");
+            if (shopClass) {
+              shopClass.value = window.__currentClass;
+              shopClass.readOnly = true;
+              shopClass.placeholder = window.__currentClass || "keine Klasse zugewiesen";
+            }
+          }
           var roleSelect = document.getElementById("account-role");
           if (roleSelect && data.role === "teacher") {
             roleSelect.innerHTML = '<option value="user">User</option>';
@@ -738,7 +760,8 @@
         document.getElementById("shop-price").value = "";
         document.getElementById("shop-points-price").value = "0";
         document.getElementById("shop-school").value = "";
-        document.getElementById("shop-class").value = "";
+        document.getElementById("shop-class").value =
+          window.__currentRole === "teacher" ? window.__currentClass || "" : "";
         document.getElementById("shop-sort").value = "0";
         document.getElementById("shop-active").checked = true;
         document.getElementById("shop-save-btn").textContent = "Anlegen";
@@ -754,7 +777,8 @@
         );
         document.getElementById("shop-sort").value = String(it.sort_order != null ? it.sort_order : 0);
         document.getElementById("shop-school").value = it.school || "";
-        document.getElementById("shop-class").value = it.class_name || "";
+        document.getElementById("shop-class").value =
+          window.__currentRole === "teacher" ? window.__currentClass || "" : it.class_name || "";
         document.getElementById("shop-active").checked = !!it.active;
         document.getElementById("shop-save-btn").textContent = "Aktualisieren";
       }

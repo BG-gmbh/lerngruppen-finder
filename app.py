@@ -87,7 +87,7 @@ def parse_subject_levels(form):
 
 
 def normalize_class_name(raw):
-    class_name = (raw or "").strip()
+    class_name = "".join((raw or "").strip().split()).lower()
     if len(class_name) > 20:
         return None
     return class_name
@@ -257,6 +257,7 @@ def _ensure_user_teacher_email_prefs(db):
         db.execute(
             "ALTER TABLE users ADD COLUMN notify_laden_email INTEGER NOT NULL DEFAULT 0"
         )
+    db.execute("UPDATE users SET class_name = lower(replace(trim(class_name), ' ', ''))")
     db.commit()
 
 
@@ -388,6 +389,7 @@ def _ensure_invite_codes(db):
         db.execute("ALTER TABLE invite_codes ADD COLUMN class_name TEXT NOT NULL DEFAULT ''")
     if "role" not in names:
         db.execute("ALTER TABLE invite_codes ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
+    db.execute("UPDATE invite_codes SET class_name = lower(replace(trim(class_name), ' ', ''))")
     db.commit()
 
 
@@ -664,16 +666,12 @@ def scoped_user_where(db, table_alias="u"):
     conditions = f"{table_alias}.school = ? AND {table_alias}.role NOT IN ({placeholders})"
     params = [admin_school(db), *hidden_roles]
     
-    # Teachers: only see their assigned class
     if current_role == "teacher":
-        teacher_row = db.execute(
-            "SELECT class_name FROM users WHERE id = ?",
-            (session.get("user_id"),),
-        ).fetchone()
-        teacher_class = (teacher_row["class_name"] or "").strip() if teacher_row else ""
-        if teacher_class:
-            conditions += f" AND {table_alias}.class_name = ?"
-            params.append(teacher_class)
+        teacher_class = teacher_class_for_session(db)
+        if not teacher_class:
+            return f" WHERE 1 = 0", ()
+        conditions += f" AND {table_alias}.class_name = ?"
+        params.append(teacher_class)
     
     return f" WHERE {conditions}", tuple(params)
 
@@ -698,18 +696,27 @@ def can_access_user(db, user_id):
     if (row["school"] or "") != admin_school(db):
         return False
     
-    # Class check for teachers: can only manage their assigned class
     if current_role == "teacher":
-        teacher_row = db.execute(
-            "SELECT class_name FROM users WHERE id = ?",
-            (session.get("user_id"),),
-        ).fetchone()
-        teacher_class = (teacher_row["class_name"] or "").strip() if teacher_row else ""
-        target_class = (row["class_name"] or "").strip()
+        teacher_class = teacher_class_for_session(db)
+        target_class = normalize_class_name(row["class_name"]) or ""
         if not teacher_class or teacher_class != target_class:
             return False
     
     return True
+
+
+def teacher_class_for_session(db):
+    if session.get("role") != "teacher":
+        return ""
+    row = db.execute(
+        "SELECT class_name FROM users WHERE id = ?",
+        (session.get("user_id"),),
+    ).fetchone()
+    return normalize_class_name(row["class_name"] if row else "") or ""
+
+
+def can_set_classes():
+    return session.get("role") in ("admin", "dev")
 
 
 def school_names_for_admin(db):
@@ -958,6 +965,11 @@ def admin_create_user():
         return redirect("/admin.html?flash=invalid_class")
     if not is_dev_session():
         school = admin_school(db)
+    if session.get("role") == "teacher":
+        teacher_class = teacher_class_for_session(db)
+        if not teacher_class:
+            return redirect("/admin.html?flash=invalid_class")
+        class_name = teacher_class
     if len(school) > 120:
         return redirect("/admin.html?flash=invalid_school")
     if school:
@@ -974,7 +986,7 @@ def admin_create_user():
                 pro_verified_art,
                 role, school, class_name
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 username,
@@ -1094,6 +1106,8 @@ def admin_user_ban():
 @app.route("/api/admin/users/class", methods=["POST"])
 @admin_api
 def admin_user_class_update():
+    if not can_set_classes():
+        return jsonify(error="forbidden"), 403
     data = request.get_json(silent=True) or {}
     try:
         user_id = int(data.get("user_id") or 0)
@@ -1321,7 +1335,7 @@ def admin_delete_message(message_id):
     db = get_db()
     row = db.execute(
         """
-        SELECT m.id, u.school, u.role
+        SELECT m.id, u.id AS user_id, u.school, u.role, u.class_name
         FROM chat_messages m
         JOIN users u ON u.id = m.user_id
         WHERE m.id = ?
@@ -1329,11 +1343,19 @@ def admin_delete_message(message_id):
         (message_id,),
     ).fetchone()
     target_role = row["role"] if row and row["role"] in ROLES else "user"
+    teacher_class = teacher_class_for_session(db) if row else ""
     if not row or (
         not is_dev_session()
         and (
             (row["school"] or "") != admin_school(db)
             or role_rank(target_role) >= role_rank(session.get("role"))
+            or (
+                session.get("role") == "teacher"
+                and (
+                    not teacher_class
+                    or (normalize_class_name(row["class_name"]) or "") != teacher_class
+                )
+            )
         )
     ):
         return jsonify(error="message_not_found"), 404
@@ -1361,23 +1383,39 @@ def admin_get_chats():
             school = admin_school(db)
             hidden_roles = hidden_roles_for_session()
             placeholders = ", ".join("?" for _ in hidden_roles)
+            class_filter = ""
+            class_params = []
+            if session.get("role") == "teacher":
+                teacher_class = teacher_class_for_session(db)
+                if not teacher_class:
+                    result.append(
+                        {
+                            "subject": subject,
+                            "label": CHAT_SUBJECT_LABELS[subject],
+                            "message_count": 0,
+                            "rating_count": 0,
+                        }
+                    )
+                    continue
+                class_filter = " AND u.class_name = ?"
+                class_params.append(teacher_class)
             count = db.execute(
                 f"""
                 SELECT COUNT(*) as c
                 FROM chat_messages m
                 JOIN users u ON u.id = m.user_id
-                WHERE m.subject = ? AND u.school = ? AND u.role NOT IN ({placeholders})
+                WHERE m.subject = ? AND u.school = ? AND u.role NOT IN ({placeholders}){class_filter}
                 """,
-                (subject, school, *hidden_roles),
+                (subject, school, *hidden_roles, *class_params),
             ).fetchone()["c"]
             rating_n = db.execute(
                 f"""
                 SELECT COUNT(*) as c
                 FROM chat_ratings r
                 JOIN users u ON u.id = r.user_id
-                WHERE r.subject = ? AND u.school = ? AND u.role NOT IN ({placeholders})
+                WHERE r.subject = ? AND u.school = ? AND u.role NOT IN ({placeholders}){class_filter}
                 """,
-                (subject, school, *hidden_roles),
+                (subject, school, *hidden_roles, *class_params),
             ).fetchone()["c"]
         result.append(
             {
@@ -1401,6 +1439,12 @@ def admin_list_ratings():
         placeholders = ", ".join("?" for _ in hidden_roles)
         school_filter = f"WHERE u.school = ? AND u.role NOT IN ({placeholders})"
         params.extend([admin_school(db), *hidden_roles])
+        if session.get("role") == "teacher":
+            teacher_class = teacher_class_for_session(db)
+            if not teacher_class:
+                return jsonify(ratings=[])
+            school_filter += " AND u.class_name = ?"
+            params.append(teacher_class)
     rows = db.execute(
         f"""
         SELECT r.subject AS subject, r.user_id AS user_id, u.username AS username,
@@ -1556,15 +1600,20 @@ def invite_redeem():
 
         db.execute(
             """
-            INSERT INTO users (username, password_hash, level_german, level_math, level_english, role, school, class_name)
-            VALUES (?, ?, 'noob', 'noob', 'noob', ?, ?, ?)
+            INSERT INTO users (
+                username, password_hash,
+                level_german, level_math, level_english, level_biology,
+                level_pgw, level_spanish, level_art,
+                role, school, class_name
+            )
+            VALUES (?, ?, 'noob', 'noob', 'noob', 'noob', 'noob', 'noob', 'noob', ?, ?, ?)
             """,
             (
                 username,
                 generate_password_hash(password),
                 inv["role"] if inv["role"] in ROLES else "user",
                 inv["school"] or "",
-                inv["class_name"] or "",
+                normalize_class_name(inv["class_name"]) or "",
             ),
         )
         new_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -1624,15 +1673,20 @@ def api_invite_redeem():
 
         db.execute(
             """
-            INSERT INTO users (username, password_hash, level_german, level_math, level_english, role, school, class_name)
-            VALUES (?, ?, 'noob', 'noob', 'noob', ?, ?, ?)
+            INSERT INTO users (
+                username, password_hash,
+                level_german, level_math, level_english, level_biology,
+                level_pgw, level_spanish, level_art,
+                role, school, class_name
+            )
+            VALUES (?, ?, 'noob', 'noob', 'noob', 'noob', 'noob', 'noob', 'noob', ?, ?, ?)
             """,
             (
                 username,
                 generate_password_hash(password),
                 inv["role"] if inv["role"] in ROLES else "user",
                 inv["school"] or "",
-                inv["class_name"] or "",
+                normalize_class_name(inv["class_name"]) or "",
             ),
         )
         new_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -1670,16 +1724,12 @@ def admin_invite_list():
     if not is_dev_session():
         where += " AND school = ?"
         params.append(admin_school(db))
-        # Teachers: only their class
         if session.get("role") == "teacher":
-            teacher_row = db.execute(
-                "SELECT class_name FROM users WHERE id = ?",
-                (session.get("user_id"),),
-            ).fetchone()
-            teacher_class = (teacher_row["class_name"] or "").strip() if teacher_row else ""
-            if teacher_class:
-                where += " AND class_name = ?"
-                params.append(teacher_class)
+            teacher_class = teacher_class_for_session(db)
+            if not teacher_class:
+                return jsonify(codes=[])
+            where += " AND class_name = ?"
+            params.append(teacher_class)
     rows = db.execute(
         f"""
         SELECT code, school, class_name, role, created_at
@@ -1721,16 +1771,10 @@ def admin_invite_create():
         school = admin_school(db)
         if role_rank(role) >= role_rank(session.get("role")):
             return jsonify(error="forbidden"), 403
-        # Teachers: can only create codes for their assigned class
         if session.get("role") == "teacher":
-            teacher_row = db.execute(
-                "SELECT class_name FROM users WHERE id = ?",
-                (session.get("user_id"),),
-            ).fetchone()
-            teacher_class = (teacher_row["class_name"] or "").strip() if teacher_row else ""
+            teacher_class = teacher_class_for_session(db)
             if not teacher_class or teacher_class != class_name:
                 return jsonify(error="forbidden"), 403
-            # Teachers can only create user invites, not teacher/admin
             if role != "user":
                 return jsonify(error="forbidden"), 403
     if len(school) > 120:

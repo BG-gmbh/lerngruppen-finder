@@ -136,6 +136,7 @@ class UserProfile {
     required this.username,
     required this.role,
     required this.school,
+    required this.className,
     required this.levelGerman,
     required this.levelMath,
     required this.levelEnglish,
@@ -161,6 +162,7 @@ class UserProfile {
       username: json['username']?.toString() ?? '',
       role: json['role']?.toString() ?? 'user',
       school: json['school']?.toString() ?? '',
+      className: json['class_name']?.toString() ?? '',
       levelGerman: json['level_german']?.toString() ?? 'noob',
       levelMath: json['level_math']?.toString() ?? 'noob',
       levelEnglish: json['level_english']?.toString() ?? 'noob',
@@ -185,6 +187,7 @@ class UserProfile {
   final String username;
   final String role;
   final String school;
+  final String className;
   final String levelGerman;
   final String levelMath;
   final String levelEnglish;
@@ -371,7 +374,9 @@ class _AppShellState extends State<AppShell> {
         AdminScreen(
           api: api,
           isDev: user!.role == 'dev',
+          adminRole: user!.role,
           adminSchool: user!.school,
+          adminClass: user!.className,
           onAppSettingsSaved: _refreshMe,
         ),
     ];
@@ -697,6 +702,8 @@ class DashboardScreen extends StatelessWidget {
             LevelChip(label: 'PGW', value: user.levelPgw),
             LevelChip(label: 'Spanisch', value: user.levelSpanish),
             LevelChip(label: 'Kunst', value: user.levelArt),
+            if (user.className.isNotEmpty)
+              Chip(label: Text('Klasse ${user.className}')),
           ],
         ),
         const SizedBox(height: 20),
@@ -1695,14 +1702,18 @@ class AdminScreen extends StatefulWidget {
   const AdminScreen({
     required this.api,
     required this.isDev,
+    required this.adminRole,
     required this.adminSchool,
+    required this.adminClass,
     required this.onAppSettingsSaved,
     super.key,
   });
 
   final ApiClient api;
   final bool isDev;
+  final String adminRole;
   final String adminSchool;
+  final String adminClass;
   final Future<void> Function() onAppSettingsSaved;
 
   @override
@@ -1865,6 +1876,12 @@ class _AdminScreenState extends State<AdminScreen> {
                     tooltip: 'Rolle und Schule bearbeiten',
                     onPressed: () => _editUserAccess(raw),
                     icon: const Icon(Icons.manage_accounts_outlined),
+                  ),
+                if (widget.adminRole == 'admin' || widget.adminRole == 'dev')
+                  IconButton(
+                    tooltip: 'Klasse setzen',
+                    onPressed: () => _setUserClass(raw),
+                    icon: const Icon(Icons.class_outlined),
                   ),
                 if (_hasProLevel(raw))
                   IconButton(
@@ -2141,6 +2158,8 @@ class _AdminScreenState extends State<AdminScreen> {
       user['role']?.toString() ?? 'user',
       if ((user['school']?.toString() ?? '').isNotEmpty)
         user['school'].toString(),
+      if ((user['class_name']?.toString() ?? '').isNotEmpty)
+        "Klasse ${user['class_name']}",
       if (proText.isNotEmpty) proText,
       user['banned'] == true ? 'gesperrt' : 'aktiv',
     ];
@@ -2374,6 +2393,22 @@ class _AdminScreenState extends State<AdminScreen> {
     });
   }
 
+  Future<void> _setUserClass(Map<String, dynamic> user) async {
+    final nextClass = await _textDialog(
+      title: 'Klasse setzen',
+      label: 'Klasse',
+      initialValue: user['class_name']?.toString() ?? '',
+      maxLength: 20,
+    );
+    if (nextClass == null) return;
+    await _run('Klasse gespeichert', () async {
+      await widget.api.postJson('/api/admin/users/class', {
+        'user_id': user['id'],
+        'class_name': nextClass.trim(),
+      });
+    });
+  }
+
   Future<void> _verifyPros(Map<String, dynamic> user) async {
     final result = await _proVerificationDialog(user);
     if (result == null) return;
@@ -2538,7 +2573,7 @@ class _AdminScreenState extends State<AdminScreen> {
           'price_hint': result['price_hint'],
           'points_price': result['points_price'],
           'school': result['school'],
-          'class_name': '',
+          'class_name': result['class_name'],
           'sort_order': 0,
           'active': result['active'],
         });
@@ -2901,6 +2936,11 @@ class _AdminScreenState extends State<AdminScreen> {
     var school = item?['school']?.toString() ??
         (item == null ? _defaultShopSchool() : '');
     _ensureKnownSchool(school);
+    final className = TextEditingController(
+      text: widget.adminRole == 'teacher'
+          ? widget.adminClass
+          : (item?['class_name']?.toString() ?? ''),
+    );
     final points = TextEditingController(
       text: (item?['points_price'] ?? 0).toString(),
     );
@@ -2946,6 +2986,14 @@ class _AdminScreenState extends State<AdminScreen> {
                 ),
                 const SizedBox(height: 12),
                 TextField(
+                  controller: className,
+                  readOnly: widget.adminRole == 'teacher',
+                  decoration: const InputDecoration(
+                    labelText: 'Klasse (leer = alle Klassen)',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
                   controller: sort,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(labelText: 'Sortierung'),
@@ -2971,6 +3019,7 @@ class _AdminScreenState extends State<AdminScreen> {
                 'price_hint': priceHint.text.trim(),
                 'points_price': int.tryParse(points.text.trim()) ?? 0,
                 'school': school,
+                'class_name': className.text.trim(),
                 'sort_order': int.tryParse(sort.text.trim()) ?? 0,
                 'active': active,
               }),
@@ -2983,6 +3032,7 @@ class _AdminScreenState extends State<AdminScreen> {
     title.dispose();
     description.dispose();
     priceHint.dispose();
+    className.dispose();
     points.dispose();
     sort.dispose();
     return result;
@@ -2994,6 +3044,9 @@ class _AdminScreenState extends State<AdminScreen> {
     final points = TextEditingController(text: '0');
     var school = _defaultShopSchool();
     _ensureKnownSchool(school);
+    final className = TextEditingController(
+      text: widget.adminRole == 'teacher' ? widget.adminClass : '',
+    );
     var active = true;
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
@@ -3029,6 +3082,14 @@ class _AdminScreenState extends State<AdminScreen> {
                   school: school,
                   onChanged: (value) => setDialogState(() => school = value),
                 ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: className,
+                  readOnly: widget.adminRole == 'teacher',
+                  decoration: const InputDecoration(
+                    labelText: 'Klasse (leer = alle Klassen)',
+                  ),
+                ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   value: active,
@@ -3053,6 +3114,7 @@ class _AdminScreenState extends State<AdminScreen> {
                 'price_hint': priceHint.text.trim(),
                 'points_price': int.tryParse(points.text.trim()) ?? 0,
                 'school': school,
+                'class_name': className.text.trim(),
                 'active': active,
               }),
               child: const Text('Erstellen'),
@@ -3063,6 +3125,7 @@ class _AdminScreenState extends State<AdminScreen> {
     );
     titles.dispose();
     priceHint.dispose();
+    className.dispose();
     points.dispose();
     return result;
   }
