@@ -51,9 +51,17 @@
           Passwort bestätigen
           <input name="password_confirm" type="password" required minlength="6" autocomplete="new-password">
         </label>
-        <label class="check-row">
-          <input type="checkbox" name="is_admin" value="1">
-          <span>Als Administrator anlegen</span>
+        <label>
+          Klasse
+          <input name="class_name" type="text" maxlength="20" placeholder="z. B. 8a, 9b, 1c" autocomplete="off">
+        </label>
+        <label>
+          Rolle
+          <select name="role" id="account-role">
+            <option value="user">User</option>
+            <option value="teacher">Lehrer</option>
+            <option value="admin">Admin</option>
+          </select>
         </label>
 
         <fieldset class="subject-levels subject-levels-plain">
@@ -139,6 +147,10 @@
           <input id="shop-school" type="text" maxlength="120" placeholder="z. B. Schule A" autocomplete="off">
         </label>
         <label>
+          Klasse (leer = alle Klassen)
+          <input id="shop-class" type="text" maxlength="20" placeholder="z. B. 8a, 9b, 1c" autocomplete="off">
+        </label>
+        <label>
           Sortierung (kleinere Zahl zuerst)
           <input id="shop-sort" type="number" value="0" step="1">
         </label>
@@ -163,6 +175,18 @@
     <section class="card tab-panel hidden" id="tab-teachers" role="tabpanel">
       <h2 class="card-title">Lehrer für E-Mail-Benachrichtigungen</h2>
       <p class="field-hint">Lehrkräfte können unter <a href="/settings.html">Einstellungen</a> selbst eine E-Mail eintragen und „Laden-Käufe“ abonnieren. Zusätzlich kannst du hier weitere Adressen pflegen. Versand nur wenn SMTP auf dem Server gesetzt ist (<code>SMTP_HOST</code> …).</p>
+
+      <h3 class="subsection-title">Mailserver</h3>
+      <p class="field-hint" id="mail-status">Mailserver-Status wird geladen …</p>
+      <form id="mail-test-form" class="stack-form" autocomplete="off">
+        <label>
+          Test-E-Mail an
+          <input id="mail-test-email" type="email" required maxlength="254" placeholder="name@schule.de">
+        </label>
+        <button type="submit" class="btn">Test-Mail senden</button>
+      </form>
+
+      <h3 class="subsection-title">Empfänger</h3>
       <form id="teacher-form" class="stack-form" autocomplete="off">
         <label>
           E-Mail
@@ -210,10 +234,47 @@
           var li = document.createElement("li");
           var info = document.createElement("span");
           info.textContent = user.username + " (" + user.role + ")";
+          if (user.class_name) {
+            info.textContent += " — Klasse " + user.class_name;
+          }
           if (user.banned) {
             info.textContent += " — gesperrt";
           }
           li.appendChild(info);
+
+          var classBtn = document.createElement("button");
+          classBtn.type = "button";
+          classBtn.className = "btn btn-small btn-secondary";
+          classBtn.style.marginLeft = "1rem";
+          classBtn.textContent = "Klasse setzen";
+          classBtn.addEventListener("click", function () {
+            var nextClass = window.prompt("Klasse für " + user.username + ":", user.class_name || "");
+            if (nextClass === null) return;
+            nextClass = nextClass.trim();
+            if (nextClass.length > 20) {
+              window.alert("Die Klasse darf höchstens 20 Zeichen lang sein.");
+              return;
+            }
+            fetch("/api/admin/users/class", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ user_id: user.id, class_name: nextClass }),
+            })
+              .then(function (r) {
+                return r.json().then(function (data) {
+                  return { ok: r.ok, data: data };
+                });
+              })
+              .then(function (result) {
+                if (!result.ok) {
+                  window.alert("Fehler beim Speichern der Klasse.");
+                  return;
+                }
+                loadUsers();
+              });
+          });
+          li.appendChild(classBtn);
 
           var resetBtn = document.createElement("button");
           resetBtn.type = "button";
@@ -322,6 +383,7 @@
             loadLadenPurchases();
           }
           if (key === "teachers") {
+            loadMailStatus();
             loadTeachers();
           }
         });
@@ -356,6 +418,8 @@
                 c.created_at +
                 ", Schule: " +
                 (c.school || "keine") +
+                ", Klasse: " +
+                (c.class_name || "keine") +
                 ", Rolle: " +
                 (c.role || "user") +
                 ")";
@@ -386,14 +450,26 @@
         var school = window.prompt("Schule für diesen Code:", "");
         if (school === null) return;
         school = school.trim();
-        var role = window.prompt("Rolle für diesen Code: user, admin oder dev", "user");
+        var className = window.prompt("Klasse für diesen Code (optional, z. B. 8a):", "");
+        if (className === null) return;
+        className = className.trim();
+        if (className.length > 20) {
+          window.alert("Die Klasse darf höchstens 20 Zeichen lang sein.");
+          return;
+        }
+        var roleHint = window.__currentRole === "admin"
+          ? "user oder teacher"
+          : window.__currentRole === "dev"
+            ? "user, teacher, admin oder dev"
+            : "user";
+        var role = window.prompt("Rolle für diesen Code: " + roleHint, "user");
         if (role === null) return;
         role = role.trim() || "user";
         fetch("/api/admin/invite-codes", {
           method: "POST",
           credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ school: school, role: role }),
+          body: JSON.stringify({ school: school, class_name: className, role: role }),
         })
           .then(function (r) {
             return r.json().then(function (d) {
@@ -411,6 +487,8 @@
               " · " +
               (x.d.school || "keine Schule") +
               " · " +
+              (x.d.class_name || "keine Klasse") +
+              " · " +
               (x.d.role || "user");
             loadCodes();
           });
@@ -421,6 +499,17 @@
       }).then(function (data) {
         if (data && data.username) {
           document.getElementById("nav-username").textContent = data.username;
+          window.__currentRole = data.role || "user";
+          var roleSelect = document.getElementById("account-role");
+          if (roleSelect && data.role === "teacher") {
+            roleSelect.innerHTML = '<option value="user">User</option>';
+          } else if (roleSelect && data.role === "admin") {
+            roleSelect.innerHTML =
+              '<option value="user">User</option><option value="teacher">Lehrer</option>';
+          } else if (roleSelect && data.role === "dev") {
+            roleSelect.innerHTML =
+              '<option value="user">User</option><option value="teacher">Lehrer</option><option value="admin">Admin</option><option value="dev">Dev</option>';
+          }
         }
       });
 
@@ -617,6 +706,7 @@
         document.getElementById("shop-price").value = "";
         document.getElementById("shop-points-price").value = "0";
         document.getElementById("shop-school").value = "";
+        document.getElementById("shop-class").value = "";
         document.getElementById("shop-sort").value = "0";
         document.getElementById("shop-active").checked = true;
         document.getElementById("shop-save-btn").textContent = "Anlegen";
@@ -632,6 +722,7 @@
         );
         document.getElementById("shop-sort").value = String(it.sort_order != null ? it.sort_order : 0);
         document.getElementById("shop-school").value = it.school || "";
+        document.getElementById("shop-class").value = it.class_name || "";
         document.getElementById("shop-active").checked = !!it.active;
         document.getElementById("shop-save-btn").textContent = "Aktualisieren";
       }
@@ -661,7 +752,8 @@
                 it.title +
                 (it.price_hint ? " — " + it.price_hint : "") +
                 (it.points_price > 0 ? " — " + it.points_price + " Punkte" : "") +
-                (it.school ? " — " + it.school : " — alle Schulen");
+                (it.school ? " — " + it.school : " — alle Schulen") +
+                (it.class_name ? " — Klasse " + it.class_name : " — alle Klassen");
               li.appendChild(info);
               var edit = document.createElement("button");
               edit.type = "button";
@@ -804,6 +896,62 @@
           });
       }
 
+      function renderMailStatus(data) {
+        var el = document.getElementById("mail-status");
+        if (!el) return;
+        var smtp = data && data.smtp ? data.smtp : {};
+        if (!smtp.configured) {
+          el.textContent = "Nicht eingerichtet: SMTP_HOST fehlt in der .env-Datei.";
+          return;
+        }
+        el.textContent =
+          "Eingerichtet: " +
+          smtp.host +
+          ":" +
+          smtp.port +
+          " · Absender: " +
+          (smtp.from || "fehlt") +
+          " · Passwort: " +
+          (smtp.password_set ? "gesetzt" : "fehlt") +
+          " · " +
+          (smtp.use_ssl ? "SSL" : smtp.starttls ? "STARTTLS" : "ohne TLS");
+      }
+
+      function loadMailStatus() {
+        fetch("/api/admin/mail-status", { credentials: "same-origin" })
+          .then(function (r) {
+            if (r.status === 401 || r.status === 403) return null;
+            return r.json();
+          })
+          .then(function (data) {
+            if (data) renderMailStatus(data);
+          });
+      }
+
+      document.getElementById("mail-test-form").addEventListener("submit", function (e) {
+        e.preventDefault();
+        var email = document.getElementById("mail-test-email").value.trim();
+        fetch("/api/admin/mail-test", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: email }),
+        })
+          .then(function (r) {
+            return r.json().then(function (d) {
+              return { ok: r.ok, d: d };
+            });
+          })
+          .then(function (x) {
+            renderMailStatus(x.d);
+            if (!x.ok) {
+              window.alert(x.d && x.d.error ? "Test-Mail fehlgeschlagen: " + x.d.error : "Test-Mail fehlgeschlagen.");
+              return;
+            }
+            window.alert("Test-Mail wurde gesendet.");
+          });
+      });
+
       document.getElementById("teacher-form").addEventListener("submit", function (e) {
         e.preventDefault();
         var email = document.getElementById("teacher-email").value.trim();
@@ -847,6 +995,7 @@
           price_hint: document.getElementById("shop-price").value.trim(),
           points_price: parseInt(document.getElementById("shop-points-price").value, 10) || 0,
           school: document.getElementById("shop-school").value.trim(),
+          class_name: document.getElementById("shop-class").value.trim(),
           sort_order: parseInt(document.getElementById("shop-sort").value, 10) || 0,
           active: document.getElementById("shop-active").checked,
         };

@@ -29,6 +29,23 @@ def smtp_configured():
     return bool(os.environ.get("SMTP_HOST", "").strip())
 
 
+def smtp_status():
+    host = os.environ.get("SMTP_HOST", "").strip()
+    port = os.environ.get("SMTP_PORT", "587").strip() or "587"
+    user = os.environ.get("SMTP_USER", "").strip()
+    mail_from = os.environ.get("SMTP_FROM", "").strip() or user
+    return {
+        "configured": bool(host),
+        "host": host,
+        "port": port,
+        "user_set": bool(user),
+        "from": mail_from,
+        "password_set": bool(os.environ.get("SMTP_PASSWORD", "").strip()),
+        "use_ssl": _env_bool("SMTP_USE_SSL", False),
+        "starttls": _env_bool("SMTP_STARTTLS", True),
+    }
+
+
 def send_smtp_mail(recipients, subject, body_plain):
     """
     recipients: Liste nicht-leerer E-Mail-Adressen
@@ -48,7 +65,9 @@ def send_smtp_mail(recipients, subject, body_plain):
     except ValueError:
         timeout = 30.0
     user = os.environ.get("SMTP_USER", "").strip()
-    password = os.environ.get("SMTP_PASSWORD", "")
+    password = os.environ.get("SMTP_PASSWORD", "").strip()
+    if host.lower() == "smtp.gmail.com":
+        password = password.replace(" ", "")
     mail_from = os.environ.get("SMTP_FROM", "").strip() or user
     if not mail_from:
         return False, "smtp_no_from"

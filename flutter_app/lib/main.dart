@@ -101,12 +101,9 @@ class ApiClient {
           ? <String, dynamic>{}
           : jsonDecode(response.body) as Map<String, dynamic>;
     } on FormatException {
-      final preview = response.body
-          .replaceAll(RegExp(r'\s+'), ' ')
-          .trim();
-      final shortPreview = preview.length > 80
-          ? '${preview.substring(0, 80)}...'
-          : preview;
+      final preview = response.body.replaceAll(RegExp(r'\s+'), ' ').trim();
+      final shortPreview =
+          preview.length > 80 ? '${preview.substring(0, 80)}...' : preview;
       throw ApiException(
         'invalid_json',
         'Der Server hat kein JSON geliefert. Backend neu starten und '
@@ -142,6 +139,9 @@ class UserProfile {
     required this.levelGerman,
     required this.levelMath,
     required this.levelEnglish,
+    required this.proVerifiedGerman,
+    required this.proVerifiedMath,
+    required this.proVerifiedEnglish,
     required this.contactEmail,
     required this.notifyLadenEmail,
     required this.schoolLogoUrl,
@@ -156,6 +156,9 @@ class UserProfile {
       levelGerman: json['level_german']?.toString() ?? 'noob',
       levelMath: json['level_math']?.toString() ?? 'noob',
       levelEnglish: json['level_english']?.toString() ?? 'noob',
+      proVerifiedGerman: json['pro_verified_german'] == true,
+      proVerifiedMath: json['pro_verified_math'] == true,
+      proVerifiedEnglish: json['pro_verified_english'] == true,
       contactEmail: json['contact_email']?.toString() ?? '',
       notifyLadenEmail: json['notify_laden_email'] == true,
       schoolLogoUrl: json['school_logo_url']?.toString() ?? '',
@@ -169,6 +172,9 @@ class UserProfile {
   final String levelGerman;
   final String levelMath;
   final String levelEnglish;
+  final bool proVerifiedGerman;
+  final bool proVerifiedMath;
+  final bool proVerifiedEnglish;
   final String contactEmail;
   final bool notifyLadenEmail;
   final String schoolLogoUrl;
@@ -181,6 +187,20 @@ class UserProfile {
       _ => 'noob',
     };
   }
+
+  IconData? get roleIcon {
+    return iconForRole(role);
+  }
+
+  bool get isStaff => role == 'admin' || role == 'dev';
+}
+
+IconData? iconForRole(String? role) {
+  return switch (role) {
+    'admin' => Icons.admin_panel_settings,
+    'dev' => Icons.developer_mode,
+    _ => null,
+  };
 }
 
 class AppShell extends StatefulWidget {
@@ -321,6 +341,7 @@ class _AppShellState extends State<AppShell> {
         AdminScreen(
           api: api,
           isDev: user!.role == 'dev',
+          adminSchool: user!.school,
           onAppSettingsSaved: _refreshMe,
         ),
     ];
@@ -328,17 +349,18 @@ class _AppShellState extends State<AppShell> {
 
     return Scaffold(
       appBar: AppBar(
+        toolbarHeight: 72,
         title: const Text('lerngruppen finder'),
         actions: [
           if (user!.schoolLogoUrl.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(6),
                 child: Image.network(
                   user!.schoolLogoUrl,
-                  width: 40,
-                  height: 40,
+                  width: 60,
+                  height: 60,
                   fit: BoxFit.contain,
                   errorBuilder: (context, error, stackTrace) =>
                       const Icon(Icons.image_not_supported_outlined),
@@ -503,7 +525,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 TextField(
                   controller: inviteCode,
                   textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(labelText: 'Einladungscode'),
+                  decoration:
+                      const InputDecoration(labelText: 'Einladungscode'),
                 ),
               ],
               const SizedBox(height: 12),
@@ -620,7 +643,18 @@ class DashboardScreen extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text('Hallo, ${user.username}', style: Theme.of(context).textTheme.headlineSmall),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text('Hallo, ${user.username}',
+                style: Theme.of(context).textTheme.headlineSmall),
+            if (user.isStaff) ...[
+              const SizedBox(width: 8),
+              Icon(user.roleIcon,
+                  size: 26, color: Theme.of(context).colorScheme.primary),
+            ],
+          ],
+        ),
         const SizedBox(height: 16),
         Wrap(
           spacing: 10,
@@ -635,7 +669,8 @@ class DashboardScreen extends StatelessWidget {
         InfoCard(
           icon: Icons.chat_bubble_outline,
           title: 'Fachchat',
-          text: 'Noob und Mittel können schreiben, sobald ein Pro im Fachraum ist.',
+          text:
+              'Noob und Mittel können schreiben, sobald ein Pro im Fachraum ist.',
           onTap: onOpenChat,
         ),
         const SizedBox(height: 12),
@@ -650,7 +685,8 @@ class DashboardScreen extends StatelessWidget {
           InfoCard(
             icon: Icons.admin_panel_settings_outlined,
             title: 'Administration',
-            text: 'Nutzer, Einladungscodes, Chats, Bewertungen und Laden verwalten.',
+            text:
+                'Nutzer, Einladungscodes, Chats, Bewertungen und Laden verwalten.',
             onTap: onOpenAdmin!,
           ),
         ],
@@ -714,7 +750,9 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   List<dynamic> rooms = const [];
+  List<dynamic> creatableRooms = const [];
   List<dynamic> messages = const [];
+  Map<String, dynamic>? appointment;
   String? subject;
   String? subjectLabel;
   String? error;
@@ -731,6 +769,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _loadRooms(silent: true);
       } else {
         _loadMessages(silent: true);
+        _loadAppointment(silent: true);
       }
     });
   }
@@ -752,7 +791,20 @@ class _ChatScreenState extends State<ChatScreen> {
         children: [
           Text('Fächer-Chat', style: Theme.of(context).textTheme.headlineSmall),
           if (error != null) ErrorBanner(error!),
+          if (creatableRooms.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.icon(
+                onPressed: _createChatRoom,
+                icon: const Icon(Icons.add_comment_outlined),
+                label: const Text('Chat erstellen'),
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
+          if (rooms.isEmpty && creatableRooms.isEmpty)
+            const Text('Aktuell ist kein Fachchat offen.'),
           for (final room in rooms) _roomCard(room as Map<String, dynamic>),
         ],
       ),
@@ -762,6 +814,12 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget _roomCard(Map<String, dynamic> room) {
     final members = (room['members'] as List? ?? const []);
     final canJoin = room['can_join'] == true;
+    final joinBlock = room['join_block']?.toString();
+    final buttonLabel = room['you_in'] == true
+        ? 'Fortsetzen'
+        : joinBlock == 'started'
+            ? 'Raum geschlossen'
+            : 'Beitreten';
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Card(
@@ -770,7 +828,8 @@ class _ChatScreenState extends State<ChatScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(room['label'].toString(), style: Theme.of(context).textTheme.titleLarge),
+              Text(room['label'].toString(),
+                  style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 6),
               Text(
                 '${room['count_non_pro']} / ${room['max']} ohne Pro, '
@@ -779,22 +838,46 @@ class _ChatScreenState extends State<ChatScreen> {
               if (members.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    members
-                        .map((m) => '${m['username']} (${levelLabel(m['level'])})')
-                        .join(', '),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      for (final raw in members)
+                        _memberLabel(raw as Map<String, dynamic>),
+                    ],
                   ),
                 ),
               const SizedBox(height: 12),
               FilledButton.icon(
                 onPressed: canJoin ? () => _join(room) : null,
                 icon: const Icon(Icons.meeting_room),
-                label: Text(room['you_in'] == true ? 'Fortsetzen' : 'Beitreten'),
+                label: Text(buttonLabel),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _memberLabel(Map<String, dynamic> member) {
+    final verified = member['pro_verified'] == true;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '${member['username']} (${levelLabel(member['level'])})',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        if (verified) ...[
+          const SizedBox(width: 3),
+          Icon(
+            Icons.verified,
+            size: 15,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ],
+      ],
     );
   }
 
@@ -813,6 +896,7 @@ class _ChatScreenState extends State<ChatScreen> {
             subtitle: error == null ? null : Text(error!),
           ),
         ),
+        _appointmentPanel(context),
         Expanded(
           child: ListView.builder(
             padding: const EdgeInsets.all(16),
@@ -820,18 +904,45 @@ class _ChatScreenState extends State<ChatScreen> {
             itemBuilder: (context, index) {
               final msg = messages[index] as Map<String, dynamic>;
               final own = msg['user_id'] == widget.user.userId;
+              final role = msg['role']?.toString();
+              final senderIcon =
+                  iconForRole(role ?? (own ? widget.user.role : null));
+              final proVerified = msg['pro_verified'] == true;
               return Align(
                 alignment: own ? Alignment.centerRight : Alignment.centerLeft,
                 child: Card(
-                  color: own ? Theme.of(context).colorScheme.primaryContainer : null,
+                  color: own
+                      ? Theme.of(context).colorScheme.primaryContainer
+                      : null,
                   child: Padding(
                     padding: const EdgeInsets.all(10),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          '${msg['username']} · ${msg['created_at']}',
-                          style: Theme.of(context).textTheme.labelSmall,
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '${msg['username']} · ${msg['created_at']}',
+                              style: Theme.of(context).textTheme.labelSmall,
+                            ),
+                            if (senderIcon != null) ...[
+                              const SizedBox(width: 6),
+                              Icon(
+                                senderIcon,
+                                size: 16,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ],
+                            if (proVerified) ...[
+                              const SizedBox(width: 6),
+                              Icon(
+                                Icons.verified,
+                                size: 16,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ],
+                          ],
                         ),
                         const SizedBox(height: 4),
                         Text(msg['body']?.toString() ?? ''),
@@ -873,11 +984,106 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  Widget _appointmentPanel(BuildContext context) {
+    final active = subject;
+    if (active == null) return const SizedBox.shrink();
+    final data = appointment;
+    final appointmentText = data?['appointment']?.toString() ?? '';
+    final started = data?['started'] == true;
+    final ended = data?['ended'] == true;
+    final yourRating = data?['your_rating'] as Map<String, dynamic>?;
+    final isPro = widget.user.levelFor(active) == 'pro';
+    final ratingAvg = data?['rating_avg'];
+    final ratingAvgText = ratingAvg != null ? ' · Avg $ratingAvg' : '';
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.event, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    appointmentText.isEmpty
+                        ? 'Kein Termin gesetzt'
+                        : 'Termin: $appointmentText',
+                  ),
+                ),
+              ],
+            ),
+            if (ended) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Termin beendet',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ] else if (started) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Termin läuft · Raum geschlossen',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+            if (isPro && data?['rating_count'] != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Bewertungen: ${data?['rating_count']}$ratingAvgText',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (isPro && !started && !ended)
+                  OutlinedButton.icon(
+                    onPressed: _setAppointment,
+                    icon: const Icon(Icons.edit_calendar),
+                    label: Text(
+                      appointmentText.isEmpty ? 'Termin setzen' : 'Termin ändern',
+                    ),
+                  ),
+                if (isPro && appointmentText.isNotEmpty && !started && !ended)
+                  FilledButton.icon(
+                    onPressed: _startAppointment,
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('Termin starten'),
+                  ),
+                if (isPro && started && !ended)
+                  FilledButton.icon(
+                    onPressed: _endAppointment,
+                    icon: const Icon(Icons.flag),
+                    label: const Text('Termin beenden'),
+                  ),
+                if (isPro && ended)
+                  FilledButton.icon(
+                    onPressed: () => _rateAppointment(yourRating),
+                    icon: const Icon(Icons.star),
+                    label: Text(
+                      yourRating == null
+                          ? 'Bewerten'
+                          : 'Bewertung ändern',
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _loadRooms({bool silent = false}) async {
     try {
       final data = await widget.api.getJson('/api/chat/rooms');
       setState(() {
         rooms = data['rooms'] as List? ?? const [];
+        creatableRooms = data['creatable'] as List? ?? const [];
         if (!silent) error = null;
       });
     } catch (ex) {
@@ -896,9 +1102,37 @@ class _ChatScreenState extends State<ChatScreen> {
         error = null;
       });
       await _loadMessages();
+      await _loadAppointment();
     } catch (ex) {
-      setState(() => error = ex.toString());
+      setState(() => error = friendlyError(ex));
     }
+  }
+
+  Future<void> _createChatRoom() async {
+    Map<String, dynamic>? room;
+    if (creatableRooms.length == 1) {
+      room = creatableRooms.first as Map<String, dynamic>;
+    } else {
+      room = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: const Text('Chat erstellen'),
+          children: [
+            for (final raw in creatableRooms)
+              SimpleDialogOption(
+                onPressed: () => Navigator.of(context).pop(
+                  raw as Map<String, dynamic>,
+                ),
+                child: Text(
+                  (raw as Map<String, dynamic>)['label'].toString(),
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+    if (room == null) return;
+    await _join(room);
   }
 
   Future<void> _leave() async {
@@ -907,6 +1141,7 @@ class _ChatScreenState extends State<ChatScreen> {
       subject = null;
       subjectLabel = null;
       messages = const [];
+      appointment = null;
       since = 0;
     });
     if (leaving != null) {
@@ -954,7 +1189,166 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() => error = ex.toString());
     }
   }
+
+  Future<void> _loadAppointment({bool silent = false}) async {
+    final active = subject;
+    if (active == null) return;
+    try {
+      final data = await widget.api.getJson('/api/chat/appointment', {
+        'subject': active,
+      });
+      setState(() {
+        appointment = data;
+        if (!silent) error = null;
+      });
+    } catch (ex) {
+      if (!silent) setState(() => error = ex.toString());
+    }
+  }
+
+  Future<void> _setAppointment() async {
+    final active = subject;
+    if (active == null) return;
+    final now = DateTime.now();
+    final date = await showDatePicker(
+      context: context,
+      initialDate: now,
+      firstDate: DateTime(now.year, now.month, now.day),
+      lastDate: DateTime(now.year + 2),
+    );
+    if (date == null) return;
+    if (!mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(now.add(const Duration(hours: 1))),
+    );
+    if (time == null) return;
+    final value =
+        '${date.year}-${_two(date.month)}-${_two(date.day)} ${_two(time.hour)}:${_two(time.minute)}';
+    try {
+      await widget.api.postJson('/api/chat/appointment', {
+        'subject': active,
+        'appointment': value,
+      });
+      await _loadAppointment();
+      await _loadRooms(silent: true);
+    } catch (ex) {
+      setState(() => error = friendlyError(ex));
+    }
+  }
+
+  Future<void> _endAppointment() async {
+    final active = subject;
+    if (active == null) return;
+    try {
+      await widget.api.postJson('/api/chat/appointment/end', {
+        'subject': active,
+      });
+      await _loadAppointment();
+    } catch (ex) {
+      setState(() => error = friendlyError(ex));
+    }
+  }
+
+  Future<void> _startAppointment() async {
+    final active = subject;
+    if (active == null) return;
+    try {
+      await widget.api.postJson('/api/chat/appointment/start', {
+        'subject': active,
+      });
+      await _loadAppointment();
+      await _loadRooms(silent: true);
+    } catch (ex) {
+      setState(() => error = friendlyError(ex));
+    }
+  }
+
+  Future<void> _rateAppointment(Map<String, dynamic>? current) async {
+    final active = subject;
+    if (active == null) return;
+    final result = await _ratingDialog(current);
+    if (result == null) return;
+    if (result.rating < 4 && result.comment.trim().isEmpty) {
+      setState(() => error = 'Bei weniger als 4 Sternen ist ein Kommentar nötig.');
+      return;
+    }
+    try {
+      await widget.api.postJson('/api/chat/appointment/rate', {
+        'subject': active,
+        'rating': result.rating,
+        'comment': result.comment.trim(),
+      });
+      await _loadAppointment();
+    } catch (ex) {
+      setState(() => error = friendlyError(ex));
+    }
+  }
+
+  Future<RatingEdit?> _ratingDialog(Map<String, dynamic>? current) async {
+    var rating = int.tryParse(current?['rating']?.toString() ?? '') ?? 5;
+    final comment = TextEditingController(
+      text: current?['comment']?.toString() ?? '',
+    );
+    final result = await showDialog<RatingEdit>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Termin bewerten'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<int>(
+                value: rating,
+                decoration: const InputDecoration(labelText: 'Bewertung'),
+                items: const [
+                  DropdownMenuItem(value: 5, child: Text('5 Sterne')),
+                  DropdownMenuItem(value: 4, child: Text('4 Sterne')),
+                  DropdownMenuItem(value: 3, child: Text('3 Sterne')),
+                  DropdownMenuItem(value: 2, child: Text('2 Sterne')),
+                  DropdownMenuItem(value: 1, child: Text('1 Stern')),
+                ],
+                onChanged: (value) {
+                  if (value != null) setDialogState(() => rating = value);
+                },
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: comment,
+                maxLines: 3,
+                decoration: const InputDecoration(labelText: 'Kommentar'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Abbrechen'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(
+                context,
+                RatingEdit(rating, comment.text),
+              ),
+              child: const Text('Speichern'),
+            ),
+          ],
+        ),
+      ),
+    );
+    comment.dispose();
+    return result;
+  }
 }
+
+class RatingEdit {
+  const RatingEdit(this.rating, this.comment);
+
+  final int rating;
+  final String comment;
+}
+
+String _two(int value) => value.toString().padLeft(2, '0');
 
 class ShopScreen extends StatefulWidget {
   const ShopScreen({required this.api, super.key});
@@ -1165,8 +1559,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final currentPasswordText = currentPassword.text;
     final newPasswordText = newPassword.text;
     final newPasswordConfirmText = newPasswordConfirm.text;
-    final wantsPasswordChange =
-        currentPasswordText.isNotEmpty ||
+    final wantsPasswordChange = currentPasswordText.isNotEmpty ||
         newPasswordText.isNotEmpty ||
         newPasswordConfirmText.isNotEmpty;
 
@@ -1219,18 +1612,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
-enum AdminSection { users, codes, chats, ratings, shop, teachers, logo, schools }
+enum AdminSection {
+  users,
+  codes,
+  chats,
+  ratings,
+  shop,
+  teachers,
+  logo,
+  schools
+}
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({
     required this.api,
     required this.isDev,
+    required this.adminSchool,
     required this.onAppSettingsSaved,
     super.key,
   });
 
   final ApiClient api;
   final bool isDev;
+  final String adminSchool;
   final Future<void> Function() onAppSettingsSaved;
 
   @override
@@ -1383,18 +1787,24 @@ class _AdminScreenState extends State<AdminScreen> {
               children: [
                 IconButton(
                   tooltip: 'Passwort setzen',
-                  onPressed: () => _changePassword(raw as Map<String, dynamic>),
+                  onPressed: () => _changePassword(raw),
                   icon: const Icon(Icons.password),
                 ),
                 if (widget.isDev)
                   IconButton(
                     tooltip: 'Rolle und Schule bearbeiten',
-                    onPressed: () => _editUserAccess(raw as Map<String, dynamic>),
+                    onPressed: () => _editUserAccess(raw),
                     icon: const Icon(Icons.manage_accounts_outlined),
+                  ),
+                if (_hasProLevel(raw))
+                  IconButton(
+                    tooltip: 'Pros verifizieren',
+                    onPressed: () => _verifyPros(raw),
+                    icon: const Icon(Icons.verified_outlined),
                   ),
                 IconButton(
                   tooltip: raw['banned'] == true ? 'Entsperren' : 'Sperren',
-                  onPressed: () => _setBanned(raw as Map<String, dynamic>),
+                  onPressed: () => _setBanned(raw),
                   icon: Icon(
                     raw['banned'] == true
                         ? Icons.lock_open
@@ -1438,7 +1848,8 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Widget _chatsBody() {
-    if (chats.isEmpty && !loading) return const Text('Keine Chatdaten gefunden.');
+    if (chats.isEmpty && !loading)
+      return const Text('Keine Chatdaten gefunden.');
     return Column(
       children: [
         for (final raw in chats)
@@ -1465,12 +1876,11 @@ class _AdminScreenState extends State<AdminScreen> {
           AdminCard(
             title:
                 '${raw['subject_label'] ?? raw['subject']} · ${raw['username']}',
-            subtitle:
-                '${raw['rating']}/5 Sterne · ${raw['comment'] ?? ''}\nAdmin-Punkte: ${raw['admin_points'] ?? 0} · ${raw['admin_note'] ?? ''}',
+            subtitle: _ratingSubtitle(raw as Map<String, dynamic>),
             leading: Icons.star_outline,
             trailing: IconButton(
               tooltip: 'Admin-Punkte bearbeiten',
-              onPressed: () => _editRating(raw as Map<String, dynamic>),
+              onPressed: () => _editRating(raw),
               icon: const Icon(Icons.edit_outlined),
             ),
           ),
@@ -1482,13 +1892,21 @@ class _AdminScreenState extends State<AdminScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Align(
-          alignment: Alignment.centerLeft,
-          child: FilledButton.icon(
-            onPressed: loading ? null : () => _editShopItem(),
-            icon: const Icon(Icons.add),
-            label: const Text('Artikel erstellen'),
-          ),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilledButton.icon(
+              onPressed: loading ? null : () => _editShopItem(),
+              icon: const Icon(Icons.add),
+              label: const Text('Artikel erstellen'),
+            ),
+            OutlinedButton.icon(
+              onPressed: loading ? null : _bulkCreateShopItems,
+              icon: const Icon(Icons.playlist_add),
+              label: const Text('Massen Listung'),
+            ),
+          ],
         ),
         const SizedBox(height: 12),
         if (shopItems.isEmpty && !loading) const Text('Keine Ladenartikel.'),
@@ -1502,12 +1920,12 @@ class _AdminScreenState extends State<AdminScreen> {
               children: [
                 IconButton(
                   tooltip: 'Bearbeiten',
-                  onPressed: () => _editShopItem(raw as Map<String, dynamic>),
+                  onPressed: () => _editShopItem(raw),
                   icon: const Icon(Icons.edit_outlined),
                 ),
                 IconButton(
                   tooltip: 'Löschen',
-                  onPressed: () => _deleteShopItem(raw as Map<String, dynamic>),
+                  onPressed: () => _deleteShopItem(raw),
                   icon: const Icon(Icons.delete_outline),
                 ),
               ],
@@ -1541,12 +1959,12 @@ class _AdminScreenState extends State<AdminScreen> {
               children: [
                 IconButton(
                   tooltip: 'Bearbeiten',
-                  onPressed: () => _editTeacher(raw as Map<String, dynamic>),
+                  onPressed: () => _editTeacher(raw),
                   icon: const Icon(Icons.edit_outlined),
                 ),
                 IconButton(
                   tooltip: 'Löschen',
-                  onPressed: () => _deleteTeacher(raw as Map<String, dynamic>),
+                  onPressed: () => _deleteTeacher(raw),
                   icon: const Icon(Icons.delete_outline),
                 ),
               ],
@@ -1587,8 +2005,8 @@ class _AdminScreenState extends State<AdminScreen> {
               borderRadius: BorderRadius.circular(6),
               child: Image.network(
                 schoolLogoUrl,
-                width: 96,
-                height: 96,
+                width: 144,
+                height: 144,
                 fit: BoxFit.contain,
                 errorBuilder: (context, error, stackTrace) =>
                     const Icon(Icons.image_not_supported_outlined, size: 48),
@@ -1647,13 +2065,35 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   String _userSubtitle(Map<String, dynamic> user) {
+    final proText = _proVerificationSummary(user);
     final parts = <String>[
       user['role']?.toString() ?? 'user',
       if ((user['school']?.toString() ?? '').isNotEmpty)
         user['school'].toString(),
+      if (proText.isNotEmpty) proText,
       user['banned'] == true ? 'gesperrt' : 'aktiv',
     ];
     return parts.join(' · ');
+  }
+
+  bool _hasProLevel(Map<String, dynamic> user) {
+    return user['level_german'] == 'pro' ||
+        user['level_math'] == 'pro' ||
+        user['level_english'] == 'pro';
+  }
+
+  String _proVerificationSummary(Map<String, dynamic> user) {
+    final items = <String>[];
+    void add(String label, String levelKey, String verifiedKey) {
+      if (user[levelKey] == 'pro') {
+        items.add('$label ${user[verifiedKey] == true ? 'verifiziert' : 'offen'}');
+      }
+    }
+
+    add('Deutsch', 'level_german', 'pro_verified_german');
+    add('Mathe', 'level_math', 'pro_verified_math');
+    add('Englisch', 'level_english', 'pro_verified_english');
+    return items.join(', ');
   }
 
   String _codeSubtitle(Map<String, dynamic> code) {
@@ -1662,6 +2102,27 @@ class _AdminScreenState extends State<AdminScreen> {
     final createdAt = code['created_at']?.toString() ?? '';
     final schoolText = school.isEmpty ? 'keine Schule' : school;
     return 'Schule: $schoolText · Rolle: $role\nErstellt: $createdAt';
+  }
+
+  String _ratingSubtitle(Map<String, dynamic> rating) {
+    final duration = _durationLabel(rating['duration_seconds']);
+    final startedAt = rating['started_at']?.toString() ?? '';
+    final endedAt = rating['ended_at']?.toString() ?? '';
+    return '${rating['rating']}/5 Sterne · ${rating['comment'] ?? ''}'
+        '${startedAt.isEmpty ? '' : '\nStart: $startedAt'}'
+        '${endedAt.isEmpty ? '' : '\nEnde: $endedAt'}'
+        '${duration.isEmpty ? '' : '\nDauer: $duration'}'
+        '\nAdmin-Punkte: ${rating['admin_points'] ?? 0} · ${rating['admin_note'] ?? ''}';
+  }
+
+  String _durationLabel(Object? value) {
+    final seconds = value is int ? value : int.tryParse(value?.toString() ?? '');
+    if (seconds == null || seconds < 0) return '';
+    final minutes = (seconds / 60).round();
+    if (minutes < 60) return '$minutes Min.';
+    final hours = minutes ~/ 60;
+    final rest = minutes % 60;
+    return rest == 0 ? '$hours Std.' : '$hours Std. $rest Min.';
   }
 
   String _shopSubtitle(Map<String, dynamic> item) {
@@ -1691,11 +2152,13 @@ class _AdminScreenState extends State<AdminScreen> {
     try {
       final data = switch (section) {
         AdminSection.users => await widget.api.getJson('/api/admin/users'),
-        AdminSection.codes => await widget.api.getJson('/api/admin/invite-codes'),
+        AdminSection.codes =>
+          await widget.api.getJson('/api/admin/invite-codes'),
         AdminSection.chats => await widget.api.getJson('/api/admin/chats'),
         AdminSection.ratings => await widget.api.getJson('/api/admin/ratings'),
         AdminSection.shop => await widget.api.getJson('/api/admin/shop'),
-        AdminSection.teachers => await widget.api.getJson('/api/admin/teachers'),
+        AdminSection.teachers =>
+          await widget.api.getJson('/api/admin/teachers'),
         AdminSection.logo => await widget.api.getJson(
             '/api/admin/app-settings',
             widget.isDev && selectedLogoSchool.isNotEmpty
@@ -1727,7 +2190,8 @@ class _AdminScreenState extends State<AdminScreen> {
             break;
           case AdminSection.logo:
             schoolLogoUrl = data['school_logo_url']?.toString() ?? '';
-            selectedLogoSchool = data['school']?.toString() ?? selectedLogoSchool;
+            selectedLogoSchool =
+                data['school']?.toString() ?? selectedLogoSchool;
             break;
           case AdminSection.schools:
             schools = (data['schools'] as List? ?? const [])
@@ -1829,6 +2293,17 @@ class _AdminScreenState extends State<AdminScreen> {
     });
   }
 
+  Future<void> _verifyPros(Map<String, dynamic> user) async {
+    final result = await _proVerificationDialog(user);
+    if (result == null) return;
+    await _run('Pro-Verifizierung gespeichert', () async {
+      await widget.api.postJson('/api/admin/users/pro-verification', {
+        'user_id': user['id'],
+        ...result,
+      });
+    });
+  }
+
   Future<void> _createInviteCode() async {
     await _loadSchools();
     final result = await _inviteCodeDialog();
@@ -1908,11 +2383,50 @@ class _AdminScreenState extends State<AdminScreen> {
     });
   }
 
+  String _defaultShopSchool() {
+    final ownSchool = widget.adminSchool.trim();
+    if (ownSchool.isNotEmpty) return ownSchool;
+    if (!widget.isDev && schools.length == 1) return schools.first;
+    return '';
+  }
+
+  void _ensureKnownSchool(String school) {
+    if (school.isNotEmpty && !schools.contains(school)) {
+      schools = [...schools, school];
+    }
+  }
+
+  Widget _schoolControl({
+    required String school,
+    required ValueChanged<String> onChanged,
+  }) {
+    if (!widget.isDev) {
+      final label = school.trim().isEmpty ? 'Keine Schule gesetzt' : school;
+      return InputDecorator(
+        decoration: const InputDecoration(labelText: 'Schule'),
+        child: Text(label),
+      );
+    }
+    return DropdownButtonFormField<String>(
+      value: school,
+      decoration: const InputDecoration(labelText: 'Schule'),
+      items: [
+        const DropdownMenuItem(value: '', child: Text('Keine')),
+        for (final value in schools)
+          DropdownMenuItem(value: value, child: Text(value)),
+      ],
+      onChanged: (value) {
+        onChanged(value ?? '');
+      },
+    );
+  }
+
   Future<void> _editShopItem([Map<String, dynamic>? item]) async {
     await _loadSchools();
     final result = await _shopDialog(item);
     if (result == null) return;
-    await _run(item == null ? 'Artikel erstellt' : 'Artikel gespeichert', () async {
+    await _run(item == null ? 'Artikel erstellt' : 'Artikel gespeichert',
+        () async {
       if (item == null) {
         await widget.api.postJson('/api/admin/shop', result);
       } else {
@@ -1921,8 +2435,39 @@ class _AdminScreenState extends State<AdminScreen> {
     });
   }
 
+  Future<void> _bulkCreateShopItems() async {
+    await _loadSchools();
+    final result = await _bulkShopDialog();
+    if (result == null) return;
+
+    final titles = (result['titles'] as List<String>? ?? const [])
+        .map((title) => title.trim())
+        .where((title) => title.isNotEmpty)
+        .toList();
+    if (titles.isEmpty) {
+      setState(() => status = 'Keine Artikel eingegeben.');
+      return;
+    }
+
+    await _run('${titles.length} Artikel erstellt', () async {
+      for (final title in titles) {
+        await widget.api.postJson('/api/admin/shop', {
+          'title': title,
+          'description': '',
+          'price_hint': result['price_hint'],
+          'points_price': result['points_price'],
+          'school': result['school'],
+          'class_name': '',
+          'sort_order': 0,
+          'active': result['active'],
+        });
+      }
+    });
+  }
+
   Future<void> _deleteShopItem(Map<String, dynamic> item) async {
-    final ok = await _confirm('Artikel löschen?', item['title']?.toString() ?? '');
+    final ok =
+        await _confirm('Artikel löschen?', item['title']?.toString() ?? '');
     if (!ok) return;
     await _run('Artikel gelöscht', () async {
       await widget.api.deleteJson('/api/admin/shop/${item['id']}');
@@ -1939,7 +2484,8 @@ class _AdminScreenState extends State<AdminScreen> {
         if (teacher == null) {
           await widget.api.postJson('/api/admin/teachers', result);
         } else {
-          await widget.api.putJson('/api/admin/teachers/${teacher['id']}', result);
+          await widget.api
+              .putJson('/api/admin/teachers/${teacher['id']}', result);
         }
       },
     );
@@ -1984,33 +2530,16 @@ class _AdminScreenState extends State<AdminScreen> {
     bool obscure = false,
     int? maxLength,
   }) async {
-    final controller = TextEditingController(text: initialValue);
     final result = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: controller,
-          obscureText: obscure,
-          autofocus: true,
-          maxLength: maxLength,
-          maxLines: obscure ? 1 : null,
-          decoration: InputDecoration(labelText: label),
-          onSubmitted: (_) => Navigator.pop(context, controller.text),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Abbrechen'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Speichern'),
-          ),
-        ],
+      builder: (context) => TextEntryDialog(
+        title: title,
+        label: label,
+        initialValue: initialValue,
+        obscure: obscure,
+        maxLength: maxLength,
       ),
     );
-    controller.dispose();
     return result?.trim();
   }
 
@@ -2018,7 +2547,8 @@ class _AdminScreenState extends State<AdminScreen> {
     final points = TextEditingController(
       text: (rating['admin_points'] ?? 0).toString(),
     );
-    final note = TextEditingController(text: rating['admin_note']?.toString() ?? '');
+    final note =
+        TextEditingController(text: rating['admin_note']?.toString() ?? '');
     final result = await showDialog<ScoreEdit>(
       context: context,
       builder: (context) => AlertDialog(
@@ -2047,7 +2577,8 @@ class _AdminScreenState extends State<AdminScreen> {
           FilledButton(
             onPressed: () => Navigator.pop(
               context,
-              ScoreEdit(int.tryParse(points.text.trim()) ?? 0, note.text.trim()),
+              ScoreEdit(
+                  int.tryParse(points.text.trim()) ?? 0, note.text.trim()),
             ),
             child: const Text('Speichern'),
           ),
@@ -2120,12 +2651,85 @@ class _AdminScreenState extends State<AdminScreen> {
     return result;
   }
 
+  Future<Map<String, dynamic>?> _proVerificationDialog(
+    Map<String, dynamic> user,
+  ) async {
+    final username = user['username']?.toString() ?? '';
+    var german = user['pro_verified_german'] == true;
+    var math = user['pro_verified_math'] == true;
+    var english = user['pro_verified_english'] == true;
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Pros verifizieren: $username'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _proVerifyTile(
+                label: 'Deutsch',
+                level: user['level_german'],
+                value: german,
+                onChanged: (value) => setDialogState(() => german = value),
+              ),
+              _proVerifyTile(
+                label: 'Mathe',
+                level: user['level_math'],
+                value: math,
+                onChanged: (value) => setDialogState(() => math = value),
+              ),
+              _proVerifyTile(
+                label: 'Englisch',
+                level: user['level_english'],
+                value: english,
+                onChanged: (value) => setDialogState(() => english = value),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Abbrechen'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, {
+                'german': german,
+                'math': math,
+                'english': english,
+              }),
+              child: const Text('Speichern'),
+            ),
+          ],
+        ),
+      ),
+    );
+    return result;
+  }
+
+  Widget _proVerifyTile({
+    required String label,
+    required Object? level,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    final isPro = level == 'pro';
+    return CheckboxListTile(
+      contentPadding: EdgeInsets.zero,
+      value: isPro && value,
+      onChanged: isPro ? (next) => onChanged(next == true) : null,
+      title: Text(label),
+      subtitle: Text(isPro ? 'Pro-Level' : 'Kein Pro-Level'),
+    );
+  }
+
   Future<Map<String, dynamic>?> _inviteCodeDialog() async {
-    var school = widget.isDev && schools.isNotEmpty ? schools.first : '';
+    var school = widget.isDev && schools.isNotEmpty
+        ? schools.first
+        : _defaultShopSchool();
+    _ensureKnownSchool(school);
     var role = 'user';
-    final roles = widget.isDev
-        ? const ['user', 'admin', 'dev']
-        : const ['user', 'admin'];
+    final roles =
+        widget.isDev ? const ['user', 'admin', 'dev'] : const ['user', 'admin'];
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -2134,20 +2738,10 @@ class _AdminScreenState extends State<AdminScreen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (widget.isDev)
-                DropdownButtonFormField<String>(
-                  value: school.isEmpty ? null : school,
-                  decoration: const InputDecoration(labelText: 'Schule'),
-                  items: [
-                    for (final value in schools)
-                      DropdownMenuItem(value: value, child: Text(value)),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) setDialogState(() => school = value);
-                  },
-                )
-              else
-                const Text('Schule wird automatisch gesetzt.'),
+              _schoolControl(
+                school: school,
+                onChanged: (value) => setDialogState(() => school = value),
+              ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 value: role,
@@ -2189,10 +2783,9 @@ class _AdminScreenState extends State<AdminScreen> {
     final priceHint = TextEditingController(
       text: item?['price_hint']?.toString() ?? '',
     );
-    var school = item?['school']?.toString() ?? '';
-    if (school.isNotEmpty && !schools.contains(school)) {
-      schools = [...schools, school];
-    }
+    var school = item?['school']?.toString() ??
+        (item == null ? _defaultShopSchool() : '');
+    _ensureKnownSchool(school);
     final points = TextEditingController(
       text: (item?['points_price'] ?? 0).toString(),
     );
@@ -2204,7 +2797,8 @@ class _AdminScreenState extends State<AdminScreen> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: Text(item == null ? 'Artikel erstellen' : 'Artikel bearbeiten'),
+          title:
+              Text(item == null ? 'Artikel erstellen' : 'Artikel bearbeiten'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -2231,16 +2825,9 @@ class _AdminScreenState extends State<AdminScreen> {
                   decoration: const InputDecoration(labelText: 'Punktepreis'),
                 ),
                 const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  value: school.isEmpty ? null : school,
-                  decoration: const InputDecoration(labelText: 'Schule'),
-                  items: [
-                    for (final value in schools)
-                      DropdownMenuItem(value: value, child: Text(value)),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) setDialogState(() => school = value);
-                  },
+                _schoolControl(
+                  school: school,
+                  onChanged: (value) => setDialogState(() => school = value),
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -2286,21 +2873,102 @@ class _AdminScreenState extends State<AdminScreen> {
     return result;
   }
 
-  Future<Map<String, dynamic>?> _teacherDialog(Map<String, dynamic>? teacher) async {
-    final email = TextEditingController(text: teacher?['email']?.toString() ?? '');
+  Future<Map<String, dynamic>?> _bulkShopDialog() async {
+    final titles = TextEditingController();
+    final priceHint = TextEditingController();
+    final points = TextEditingController(text: '0');
+    var school = _defaultShopSchool();
+    _ensureKnownSchool(school);
+    var active = true;
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Massen Listung'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: titles,
+                  minLines: 6,
+                  maxLines: 10,
+                  decoration: const InputDecoration(
+                    labelText: 'Artikel',
+                    hintText: 'Ein Artikel pro Zeile',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: priceHint,
+                  decoration: const InputDecoration(labelText: 'Preis-Hinweis'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: points,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Punktepreis'),
+                ),
+                const SizedBox(height: 12),
+                _schoolControl(
+                  school: school,
+                  onChanged: (value) => setDialogState(() => school = value),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: active,
+                  onChanged: (value) => setDialogState(() => active = value),
+                  title: const Text('Aktiv'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Abbrechen'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, {
+                'titles': titles.text
+                    .split(RegExp(r'\r?\n'))
+                    .map((line) => line.trim())
+                    .where((line) => line.isNotEmpty)
+                    .toList(),
+                'price_hint': priceHint.text.trim(),
+                'points_price': int.tryParse(points.text.trim()) ?? 0,
+                'school': school,
+                'active': active,
+              }),
+              child: const Text('Erstellen'),
+            ),
+          ],
+        ),
+      ),
+    );
+    titles.dispose();
+    priceHint.dispose();
+    points.dispose();
+    return result;
+  }
+
+  Future<Map<String, dynamic>?> _teacherDialog(
+      Map<String, dynamic>? teacher) async {
+    final email =
+        TextEditingController(text: teacher?['email']?.toString() ?? '');
     final name = TextEditingController(
       text: teacher?['display_name']?.toString() ?? '',
     );
-    var school = teacher?['school']?.toString() ?? '';
-    if (school.isNotEmpty && !schools.contains(school)) {
-      schools = [...schools, school];
-    }
+    var school = teacher?['school']?.toString() ??
+        (teacher == null ? _defaultShopSchool() : '');
+    _ensureKnownSchool(school);
     var active = teacher?['active'] != false;
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: Text(teacher == null ? 'Kontakt erstellen' : 'Kontakt bearbeiten'),
+          title: Text(
+              teacher == null ? 'Kontakt erstellen' : 'Kontakt bearbeiten'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -2315,16 +2983,9 @@ class _AdminScreenState extends State<AdminScreen> {
                 decoration: const InputDecoration(labelText: 'Name'),
               ),
               const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: school.isEmpty ? null : school,
-                decoration: const InputDecoration(labelText: 'Schule'),
-                items: [
-                  for (final value in schools)
-                    DropdownMenuItem(value: value, child: Text(value)),
-                ],
-                onChanged: (value) {
-                  if (value != null) setDialogState(() => school = value);
-                },
+              _schoolControl(
+                school: school,
+                onChanged: (value) => setDialogState(() => school = value),
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
@@ -2391,6 +3052,72 @@ class AdminCard extends StatelessWidget {
           trailing: trailing,
         ),
       ),
+    );
+  }
+}
+
+class TextEntryDialog extends StatefulWidget {
+  const TextEntryDialog({
+    required this.title,
+    required this.label,
+    required this.initialValue,
+    required this.obscure,
+    this.maxLength,
+    super.key,
+  });
+
+  final String title;
+  final String label;
+  final String initialValue;
+  final bool obscure;
+  final int? maxLength;
+
+  @override
+  State<TextEntryDialog> createState() => _TextEntryDialogState();
+}
+
+class _TextEntryDialogState extends State<TextEntryDialog> {
+  late final TextEditingController controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    Navigator.of(context).pop(controller.text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: TextField(
+        controller: controller,
+        obscureText: widget.obscure,
+        autofocus: true,
+        maxLength: widget.maxLength,
+        maxLines: widget.obscure ? 1 : null,
+        decoration: InputDecoration(labelText: widget.label),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Abbrechen'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('Speichern'),
+        ),
+      ],
     );
   }
 }
@@ -2475,6 +3202,15 @@ String friendlyError(Object ex) {
       'invalid_school' => 'Schulname ist zu lang.',
       'invalid_logo_url' => 'Logo-URL ist ungueltig.',
       'invalid_role' => 'Rolle ist ungueltig.',
+      'invalid_datetime' => 'Bitte ein gültiges Datum wählen.',
+      'permission' => 'Nur Pros können diesen Termin ändern.',
+      'no_appointment' => 'Es gibt keinen Termin.',
+      'not_started' => 'Der Termin wurde noch nicht gestartet.',
+      'already_ended' => 'Der Termin ist schon beendet.',
+      'room_closed' => 'Der Termin läuft schon. Der Raum ist geschlossen.',
+      'not_ended' => 'Der Termin wurde noch nicht beendet.',
+      'need_comment' => 'Bei weniger als 4 Sternen ist ein Kommentar nötig.',
+      'not_in_room' => 'Du bist nicht mehr im Raum.',
       'setup_done' => 'Es gibt schon ein Admin-Konto.',
       'auth' => 'Bitte neu einloggen.',
       'forbidden' => 'Dafuer hast du keine Berechtigung.',

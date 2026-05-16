@@ -121,6 +121,8 @@
         btn.textContent =
           room.join_block === "full"
             ? "Raum voll"
+            : room.join_block === "started"
+              ? "Raum geschlossen"
             : room.join_block === "need_pro"
               ? "Warte auf Pro"
               : "Beitreten nicht möglich";
@@ -177,7 +179,7 @@
       body.textContent = m.body;
       wrap.appendChild(head);
       wrap.appendChild(body);
-      if (userRole === 'admin') {
+      if (userRole === "teacher" || userRole === "admin" || userRole === "dev") {
         var deleteBtn = document.createElement("button");
         deleteBtn.className = "btn btn-ghost btn-small";
         deleteBtn.textContent = "Löschen";
@@ -313,7 +315,7 @@
 
   function stableAppointmentKey(data, hasProRight) {
     var yr = null;
-    if (data && data.your_rating) {
+    if (hasProRight && data && data.your_rating) {
       yr = {
         r: data.your_rating.rating,
         c: data.your_rating.comment || "",
@@ -327,6 +329,7 @@
     }
     return JSON.stringify({
       appointment: data && data.appointment ? data.appointment : null,
+      started: !!(data && data.started),
       ended: !!(data && data.ended),
       yr: yr,
       pro: !!hasProRight,
@@ -396,26 +399,32 @@
           (data.rating_avg != null ? " (Ø " + data.rating_avg.toFixed(1) + ")" : "") +
           "</p>";
         content += '<ul class="chat-ratings-pro-list" id="chat-ratings-pro-list"></ul>';
-      } else {
-        content +=
-          '<p class="chat-appointment-text muted" id="chat-rating-private-note">Die Übersicht und alle Bewertungs-Kommentare siehst du nur als <strong>Pro</strong> in diesem Fach.</p>';
       }
-      content +=
-        '<div class="chat-rating-box">' +
-        '<label for="rating-value">Bewertung (1–5):</label>' +
-        '<select id="rating-value" class="chat-rating-input">' +
-        ratingSelectOptions(data.your_rating) +
-        "</select>" +
-        '<label for="rating-comment">Kommentar <span id="rating-comment-hint" class="muted"></span></label>' +
-        '<textarea id="rating-comment" class="chat-rating-textarea" rows="3" placeholder="Wie war das Treffen?"></textarea>' +
-        '<button type="button" class="btn btn-secondary btn-small" id="btn-submit-rating">Bewertung speichern</button>' +
-        "</div>";
+      if (hasProRight) {
+        content +=
+          '<div class="chat-rating-box">' +
+          '<label for="rating-value">Bewertung (1–5):</label>' +
+          '<select id="rating-value" class="chat-rating-input">' +
+          ratingSelectOptions(data.your_rating) +
+          "</select>" +
+          '<label for="rating-comment">Kommentar <span id="rating-comment-hint" class="muted"></span></label>' +
+          '<textarea id="rating-comment" class="chat-rating-textarea" rows="3" placeholder="Wie war das Treffen?"></textarea>' +
+          '<button type="button" class="btn btn-secondary btn-small" id="btn-submit-rating">Bewertung speichern</button>' +
+          "</div>";
+      }
     } else {
-      if (hasProRight && data && data.appointment) {
+      if (data && data.started) {
+        content += '<p class="chat-appointment-text"><strong>Termin läuft. Raum geschlossen.</strong></p>';
+      }
+      if (hasProRight && data && data.appointment && !data.started) {
+        content +=
+          '<button type="button" class="btn btn-secondary btn-small" id="btn-start-appointment">Termin starten</button>';
+      }
+      if (hasProRight && data && data.appointment && data.started) {
         content +=
           '<button type="button" class="btn btn-secondary btn-small" id="btn-end-appointment">Termin beenden</button>';
       }
-      if (hasProRight) {
+      if (hasProRight && !(data && data.started)) {
         content +=
           '<button type="button" class="btn btn-secondary btn-small" id="btn-set-appointment">Termin festlegen</button>';
       }
@@ -479,6 +488,10 @@
     if (endBtn) {
       endBtn.addEventListener("click", endAppointment);
     }
+    var startBtn = $("btn-start-appointment");
+    if (startBtn) {
+      startBtn.addEventListener("click", startAppointment);
+    }
     var submitBtn = $("btn-submit-rating");
     if (submitBtn) {
       submitBtn.addEventListener("click", submitRating);
@@ -537,6 +550,21 @@
     });
   }
 
+  function startAppointment() {
+    if (!currentSubject) return;
+    api("/api/chat/appointment/start", {
+      method: "POST",
+      body: { subject: currentSubject },
+    }).then(function (res) {
+      if (!res.ok) {
+        setLobbyError("Termin starten fehlgeschlagen.");
+        return;
+      }
+      loadAppointment();
+      loadRooms();
+    });
+  }
+
   function submitRating() {
     if (!currentSubject) return;
     var rating = parseInt($("rating-value").value, 10);
@@ -568,19 +596,24 @@
   function showCreateRoomButton() {
     if (!userLevels) return;
     var proSubjects = [];
-    if (userLevels.level_german === "pro") proSubjects.push("german");
-    if (userLevels.level_math === "pro") proSubjects.push("math");
-    if (userLevels.level_english === "pro") proSubjects.push("english");
+    if (canCreateSubject("german")) proSubjects.push("german");
+    if (canCreateSubject("math")) proSubjects.push("math");
+    if (canCreateSubject("english")) proSubjects.push("english");
     var btn = $("btn-create-room");
     if (!btn) return;
     btn.style.display = proSubjects.length ? "inline-flex" : "none";
   }
 
+  function canCreateSubject(subject) {
+    if (!userLevels) return false;
+    return userLevels["level_" + subject] === "pro";
+  }
+
   function chooseProSubject() {
     var choices = [];
-    if (userLevels.level_german === "pro") choices.push("Deutsch|german");
-    if (userLevels.level_math === "pro") choices.push("Mathe|math");
-    if (userLevels.level_english === "pro") choices.push("Englisch|english");
+    if (canCreateSubject("german")) choices.push("Deutsch|german");
+    if (canCreateSubject("math")) choices.push("Mathe|math");
+    if (canCreateSubject("english")) choices.push("Englisch|english");
     if (!choices.length) return null;
     if (choices.length === 1) return choices[0].split("|")[1];
     var text = "Wähle ein Fach:\n" + choices.map(function (c, idx) {
@@ -606,7 +639,7 @@
       userLevels = data;
       var nav = $("nav-username");
       if (nav) nav.textContent = data.username;
-      if (data.role === "admin") {
+      if (data.role === "teacher" || data.role === "admin" || data.role === "dev") {
         var adm = $("nav-admin");
         if (adm) adm.classList.remove("hidden");
       }

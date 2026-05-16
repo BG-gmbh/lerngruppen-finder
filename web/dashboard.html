@@ -33,6 +33,7 @@
     <ul id="flash-banner"></ul>
     <section class="card">
       <h1>Hallo, <span id="welcome-name">…</span></h1>
+      <p id="class-summary" class="level-summary muted"></p>
       <p id="level-summary" class="level-summary muted"></p>
       <p class="muted" style="margin-top:1rem;">
         <a href="/laden.html">Laden</a> — Angebote und Materialien vom Team.
@@ -57,6 +58,10 @@
     function setSummary(data) {
       var el = document.getElementById("level-summary");
       if (!el || !data) return;
+      var classEl = document.getElementById("class-summary");
+      if (classEl) {
+        classEl.textContent = data.class_name ? "Klasse: " + data.class_name : "Keine Klasse festgelegt";
+      }
       el.textContent =
         "Deutsch: " +
         labelLevel(data.level_german) +
@@ -79,7 +84,7 @@
         document.getElementById("welcome-name").textContent = data.username;
         var navName = document.getElementById("nav-username");
         if (navName) navName.textContent = data.username;
-        if (data.role === "admin") {
+        if (data.role === "teacher" || data.role === "admin" || data.role === "dev") {
           var adm = document.getElementById("nav-admin");
           if (adm) adm.classList.remove("hidden");
         }

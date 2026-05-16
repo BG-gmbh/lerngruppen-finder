@@ -125,7 +125,7 @@
       .then(function (data) {
         if (!data || !data.username) return;
         document.getElementById("nav-username").textContent = data.username;
-        if (data.role === "admin") {
+        if (data.role === "teacher" || data.role === "admin" || data.role === "dev") {
           var adm = document.getElementById("nav-admin");
           if (adm) adm.classList.remove("hidden");
         }

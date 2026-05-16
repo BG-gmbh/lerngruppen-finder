@@ -15,7 +15,9 @@
       if (nameEl && data.username) nameEl.textContent = data.username;
       var adminEl = document.getElementById("nav-admin");
       if (adminEl) {
-        if (data.role === "admin") adminEl.classList.remove("hidden");
+        if (data.role === "teacher" || data.role === "admin" || data.role === "dev") {
+          adminEl.classList.remove("hidden");
+        }
         else adminEl.classList.add("hidden");
       }
     })

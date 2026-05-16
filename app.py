@@ -11,17 +11,28 @@ from dotenv import load_dotenv
 from flask import Flask, g, jsonify, redirect, request, send_from_directory, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from mailer import send_smtp_mail, smtp_status
+
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
 DATABASE = os.path.join(os.path.dirname(__file__), "users.db")
 LEVELS = frozenset({"pro", "medium", "noob"})
-ROLES = frozenset({"dev", "admin", "user"})
-CHAT_SUBJECTS = frozenset({"german", "math", "english"})
-CHAT_SUBJECT_LABELS = {"german": "Deutsch", "math": "Mathe", "english": "Englisch"}
-CHAT_LEVEL_COLUMN = {
-    "german": "level_german",
-    "math": "level_math",
-    "english": "level_english",
+ROLES = frozenset({"dev", "admin", "teacher", "user"})
+ROLE_RANK = {"user": 0, "teacher": 1, "admin": 2, "dev": 3}
+CHAT_SUBJECT_ORDER = ("german", "math", "english", "biology", "pgw", "spanish", "art")
+CHAT_SUBJECTS = frozenset(CHAT_SUBJECT_ORDER)
+CHAT_SUBJECT_LABELS = {
+    "german": "Deutsch",
+    "math": "Mathe",
+    "english": "Englisch",
+    "biology": "Biologie",
+    "pgw": "PGW",
+    "spanish": "Spanisch",
+    "art": "Kunst",
+}
+CHAT_LEVEL_COLUMN = {subject: f"level_{subject}" for subject in CHAT_SUBJECT_ORDER}
+CHAT_VERIFIED_COLUMN = {
+    subject: f"pro_verified_{subject}" for subject in CHAT_SUBJECT_ORDER
 }
 CHAT_MAX_USERS = 5
 CHAT_BODY_MAX = 500
@@ -69,12 +80,62 @@ def chat_subject_key(raw):
 
 
 def parse_subject_levels(form):
-    lv_g = form.get("level_german")
-    lv_m = form.get("level_math")
-    lv_e = form.get("level_english")
-    if lv_g not in LEVELS or lv_m not in LEVELS or lv_e not in LEVELS:
+    levels = tuple(form.get(CHAT_LEVEL_COLUMN[subject]) for subject in CHAT_SUBJECT_ORDER)
+    if any(level not in LEVELS for level in levels):
         return None
-    return lv_g, lv_m, lv_e
+    return levels
+
+
+def normalize_class_name(raw):
+    class_name = (raw or "").strip()
+    if len(class_name) > 20:
+        return None
+    return class_name
+
+
+def class_grade_number(class_name):
+    digits = []
+    for ch in (class_name or "").strip():
+        if ch.isdigit():
+            digits.append(ch)
+        elif digits:
+            break
+    if not digits:
+        return None
+    try:
+        return int("".join(digits))
+    except ValueError:
+        return None
+
+
+def user_may_access_subject(db, user_id, subject):
+    if subject != "pgw":
+        return True
+    row = db.execute(
+        "SELECT class_name, role FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
+    if row is None:
+        return False
+    role = row["role"] if row["role"] in ROLES else "user"
+    if role in ("teacher", "admin", "dev"):
+        return True
+    grade = class_grade_number(row["class_name"])
+    return grade is not None and grade >= 9
+
+
+def next_pro_verification_values(row, levels):
+    next_values = []
+    for subject, level in zip(CHAT_SUBJECT_ORDER, levels):
+        level_col = CHAT_LEVEL_COLUMN[subject]
+        verified_col = CHAT_VERIFIED_COLUMN[subject]
+        if level != "pro":
+            next_values.append(0)
+        elif row is not None and row[level_col] == "pro" and row[verified_col]:
+            next_values.append(1)
+        else:
+            next_values.append(0)
+    return tuple(next_values)
 
 
 def get_db():
@@ -94,10 +155,16 @@ def close_db(_exc=None):
 def _ensure_subject_columns(db):
     cur = db.execute("PRAGMA table_info(users)")
     names = {row[1] for row in cur.fetchall()}
-    for col in ("level_german", "level_math", "level_english"):
+    for col in CHAT_LEVEL_COLUMN.values():
         if col not in names:
             db.execute(
                 f"ALTER TABLE users ADD COLUMN {col} TEXT NOT NULL DEFAULT 'noob'"
+            )
+    for subject, col in CHAT_VERIFIED_COLUMN.items():
+        if col not in names:
+            db.execute(f"ALTER TABLE users ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0")
+            db.execute(
+                f"UPDATE users SET {col} = 1 WHERE {CHAT_LEVEL_COLUMN[subject]} = 'pro'"
             )
     db.commit()
 
@@ -182,6 +249,8 @@ def _ensure_user_teacher_email_prefs(db):
     names = {row[1] for row in cur.fetchall()}
     if "school" not in names:
         db.execute("ALTER TABLE users ADD COLUMN school TEXT NOT NULL DEFAULT ''")
+    if "class_name" not in names:
+        db.execute("ALTER TABLE users ADD COLUMN class_name TEXT NOT NULL DEFAULT ''")
     if "contact_email" not in names:
         db.execute("ALTER TABLE users ADD COLUMN contact_email TEXT")
     if "notify_laden_email" not in names:
@@ -250,6 +319,8 @@ def _ensure_chat_tables(db):
             created_by INTEGER NOT NULL,
             created_at TEXT NOT NULL DEFAULT (datetime('now')), 
             updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            started INTEGER NOT NULL DEFAULT 0,
+            started_at TEXT,
             ended INTEGER NOT NULL DEFAULT 0,
             ended_at TEXT
         )
@@ -264,6 +335,14 @@ def _ensure_chat_tables(db):
     if "ended_at" not in appointment_cols:
         db.execute(
             "ALTER TABLE chat_appointments ADD COLUMN ended_at TEXT"
+        )
+    if "started" not in appointment_cols:
+        db.execute(
+            "ALTER TABLE chat_appointments ADD COLUMN started INTEGER NOT NULL DEFAULT 0"
+        )
+    if "started_at" not in appointment_cols:
+        db.execute(
+            "ALTER TABLE chat_appointments ADD COLUMN started_at TEXT"
         )
     db.execute(
         """
@@ -293,6 +372,7 @@ def _ensure_invite_codes(db):
             code TEXT PRIMARY KEY,
             created_by INTEGER NOT NULL,
             school TEXT NOT NULL DEFAULT '',
+            class_name TEXT NOT NULL DEFAULT '',
             role TEXT NOT NULL DEFAULT 'user',
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             used_at TEXT,
@@ -304,6 +384,8 @@ def _ensure_invite_codes(db):
     names = {row[1] for row in cur.fetchall()}
     if "school" not in names:
         db.execute("ALTER TABLE invite_codes ADD COLUMN school TEXT NOT NULL DEFAULT ''")
+    if "class_name" not in names:
+        db.execute("ALTER TABLE invite_codes ADD COLUMN class_name TEXT NOT NULL DEFAULT ''")
     if "role" not in names:
         db.execute("ALTER TABLE invite_codes ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
     db.commit()
@@ -404,6 +486,20 @@ def _user_level_for_subject(db, user_id, subject):
     return v if v in LEVELS else "noob"
 
 
+def _user_is_verified_pro_for_subject(db, user_id, subject):
+    level_col = CHAT_LEVEL_COLUMN[subject]
+    verified_col = CHAT_VERIFIED_COLUMN[subject]
+    row = db.execute(
+        f"SELECT {level_col} AS lvl, {verified_col} AS verified, role FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
+    if row is None:
+        return False
+    return row["lvl"] == "pro" and (
+        bool(row["verified"]) or row["role"] in ("teacher", "admin", "dev")
+    )
+
+
 def _chat_presence_pro_count(db, subject):
     return int(
         db.execute(
@@ -482,7 +578,7 @@ def admin_required(view):
             session.clear()
             q = urlencode({"flash": "banned", "flash_msg": msg})
             return redirect(f"/login.html?{q}")
-        if session.get("role") not in ("admin", "dev"):
+        if session.get("role") not in ("teacher", "admin", "dev"):
             return redirect("/dashboard.html?flash=admin_only")
         return view(*args, **kwargs)
 
@@ -494,7 +590,7 @@ def admin_api(view):
     def wrapped(*args, **kwargs):
         if not _load_api_auth_context():
             return jsonify(error="auth"), 401
-        if session.get("role") not in ("admin", "dev"):
+        if session.get("role") not in ("teacher", "admin", "dev"):
             return jsonify(error="forbidden"), 403
         return view(*args, **kwargs)
 
@@ -535,6 +631,17 @@ def is_dev_session():
     return session.get("role") == "dev"
 
 
+def role_rank(role):
+    return ROLE_RANK.get(role if role in ROLES else "user", 0)
+
+
+def hidden_roles_for_session():
+    if is_dev_session():
+        return []
+    current_rank = role_rank(session.get("role"))
+    return [role for role, rank in ROLE_RANK.items() if rank >= current_rank]
+
+
 def admin_school(db):
     if "school" in session:
         return session.get("school") or ""
@@ -550,8 +657,11 @@ def admin_school(db):
 def scoped_user_where(db, table_alias="u"):
     if is_dev_session():
         return "", ()
-    return f" WHERE {table_alias}.school = ? AND {table_alias}.role != 'dev'", (
-        admin_school(db),
+    hidden_roles = hidden_roles_for_session()
+    placeholders = ", ".join("?" for _ in hidden_roles)
+    return (
+        f" WHERE {table_alias}.school = ? AND {table_alias}.role NOT IN ({placeholders})",
+        (admin_school(db), *hidden_roles),
     )
 
 
@@ -564,7 +674,11 @@ def can_access_user(db, user_id):
         return False
     if is_dev_session():
         return True
-    return row["role"] != "dev" and (row["school"] or "") == admin_school(db)
+    target_role = row["role"] if row["role"] in ROLES else "user"
+    return (
+        (row["school"] or "") == admin_school(db)
+        and role_rank(target_role) < role_rank(session.get("role"))
+    )
 
 
 def school_names_for_admin(db):
@@ -661,8 +775,8 @@ def setup_create():
     if password != password2:
         return redirect("/setup.html?flash=mismatch")
 
-    levels = parse_subject_levels(request.form) or ("pro", "pro", "pro")
-    lg, lm, le = levels
+    levels = parse_subject_levels(request.form) or tuple("pro" for _ in CHAT_SUBJECT_ORDER)
+    lg, lm, le, lb, lp, ls, la = levels
     password_hash = generate_password_hash(password)
     row = db.execute(
         "SELECT id FROM users WHERE username = ?",
@@ -673,10 +787,11 @@ def setup_create():
             """
             UPDATE users
             SET password_hash = ?, level_german = ?, level_math = ?,
-                level_english = ?, role = 'dev', banned = 0
+                level_english = ?, level_biology = ?, level_pgw = ?,
+                level_spanish = ?, level_art = ?, role = 'dev', banned = 0
             WHERE id = ?
             """,
-            (password_hash, lg, lm, le, row["id"]),
+            (password_hash, lg, lm, le, lb, lp, ls, la, row["id"]),
         )
         db.execute("DELETE FROM api_tokens WHERE user_id = ?", (row["id"],))
         new_id = row["id"]
@@ -684,10 +799,14 @@ def setup_create():
         try:
             cur = db.execute(
                 """
-                INSERT INTO users (username, password_hash, level_german, level_math, level_english, role)
-                VALUES (?, ?, ?, ?, ?, 'dev')
+                INSERT INTO users (
+                    username, password_hash,
+                    level_german, level_math, level_english, level_biology,
+                    level_pgw, level_spanish, level_art, role
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'dev')
                 """,
-                (username, password_hash, lg, lm, le),
+                (username, password_hash, lg, lm, le, lb, lp, ls, la),
             )
         except sqlite3.IntegrityError:
             return redirect("/setup.html?flash=taken")
@@ -734,7 +853,8 @@ def api_setup_create():
             """
             UPDATE users
             SET password_hash = ?, level_german = 'pro', level_math = 'pro',
-                level_english = 'pro', role = 'dev', banned = 0
+                level_english = 'pro', level_biology = 'pro', level_pgw = 'pro',
+                level_spanish = 'pro', level_art = 'pro', role = 'dev', banned = 0
             WHERE id = ?
             """,
             (password_hash, row["id"]),
@@ -745,8 +865,12 @@ def api_setup_create():
         try:
             cur = db.execute(
                 """
-                INSERT INTO users (username, password_hash, level_german, level_math, level_english, role)
-                VALUES (?, ?, 'pro', 'pro', 'pro', 'dev')
+                INSERT INTO users (
+                    username, password_hash,
+                    level_german, level_math, level_english, level_biology,
+                    level_pgw, level_spanish, level_art, role
+                )
+                VALUES (?, ?, 'pro', 'pro', 'pro', 'pro', 'pro', 'pro', 'pro', 'dev')
                 """,
                 (username, password_hash),
             )
@@ -784,17 +908,23 @@ def admin_create_user():
     if levels is None:
         return redirect("/admin.html?flash=levels")
 
-    role = "admin" if request.form.get("is_admin") == "1" else "user"
+    role = (request.form.get("role") or "").strip()
+    if not role:
+        role = "admin" if request.form.get("is_admin") == "1" else "user"
     if role not in ROLES:
         role = "user"
     if role == "dev" and not is_dev_session():
         role = "user"
-    if role == "admin" and not is_dev_session():
+    if not is_dev_session() and role_rank(role) >= role_rank(session.get("role")):
         role = "user"
 
-    lg, lm, le = levels
+    lg, lm, le, lb, lp, ls, la = levels
+    vg, vm, ve, vb, vp, vs, va = tuple(1 if level == "pro" else 0 for level in levels)
     db = get_db()
     school = (request.form.get("school") or "").strip()
+    class_name = normalize_class_name(request.form.get("class_name"))
+    if class_name is None:
+        return redirect("/admin.html?flash=invalid_class")
     if not is_dev_session():
         school = admin_school(db)
     if len(school) > 120:
@@ -804,10 +934,38 @@ def admin_create_user():
     try:
         db.execute(
             """
-            INSERT INTO users (username, password_hash, level_german, level_math, level_english, role, school)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO users (
+                username, password_hash,
+                level_german, level_math, level_english, level_biology,
+                level_pgw, level_spanish, level_art,
+                pro_verified_german, pro_verified_math, pro_verified_english,
+                pro_verified_biology, pro_verified_pgw, pro_verified_spanish,
+                pro_verified_art,
+                role, school, class_name
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (username, generate_password_hash(password), lg, lm, le, role, school),
+            (
+                username,
+                generate_password_hash(password),
+                lg,
+                lm,
+                le,
+                lb,
+                lp,
+                ls,
+                la,
+                vg,
+                vm,
+                ve,
+                vb,
+                vp,
+                vs,
+                va,
+                role,
+                school,
+                class_name,
+            ),
         )
         db.commit()
     except sqlite3.IntegrityError:
@@ -823,7 +981,13 @@ def admin_user_list():
     where, params = scoped_user_where(db)
     rows = db.execute(
         f"""
-        SELECT id, username, role, school, banned, banned_message
+        SELECT id, username, role, school, class_name,
+               level_german, level_math, level_english, level_biology,
+               level_pgw, level_spanish, level_art,
+               pro_verified_german, pro_verified_math, pro_verified_english,
+               pro_verified_biology, pro_verified_pgw, pro_verified_spanish,
+               pro_verified_art,
+               banned, banned_message
         FROM users u
         {where}
         ORDER BY username COLLATE NOCASE
@@ -837,6 +1001,21 @@ def admin_user_list():
                 "username": r["username"],
                 "role": r["role"],
                 "school": r["school"] or "",
+                "class_name": r["class_name"] or "",
+                "level_german": r["level_german"],
+                "level_math": r["level_math"],
+                "level_english": r["level_english"],
+                "level_biology": r["level_biology"],
+                "level_pgw": r["level_pgw"],
+                "level_spanish": r["level_spanish"],
+                "level_art": r["level_art"],
+                "pro_verified_german": bool(r["pro_verified_german"]),
+                "pro_verified_math": bool(r["pro_verified_math"]),
+                "pro_verified_english": bool(r["pro_verified_english"]),
+                "pro_verified_biology": bool(r["pro_verified_biology"]),
+                "pro_verified_pgw": bool(r["pro_verified_pgw"]),
+                "pro_verified_spanish": bool(r["pro_verified_spanish"]),
+                "pro_verified_art": bool(r["pro_verified_art"]),
                 "banned": bool(r["banned"]),
                 "banned_message": r["banned_message"] or "",
             }
@@ -879,6 +1058,94 @@ def admin_user_ban():
         db.execute("UPDATE users SET banned = ? WHERE id = ?", (banned, user_id))
     db.commit()
     return jsonify(ok=True)
+
+
+@app.route("/api/admin/users/class", methods=["POST"])
+@admin_api
+def admin_user_class_update():
+    data = request.get_json(silent=True) or {}
+    try:
+        user_id = int(data.get("user_id") or 0)
+    except (TypeError, ValueError):
+        return jsonify(error="invalid_user"), 400
+    class_name = normalize_class_name(data.get("class_name"))
+    if class_name is None:
+        return jsonify(error="invalid_class"), 400
+    db = get_db()
+    if not can_access_user(db, user_id):
+        return jsonify(error="not_found"), 404
+    db.execute("UPDATE users SET class_name = ? WHERE id = ?", (class_name, user_id))
+    db.commit()
+    return jsonify(ok=True, class_name=class_name)
+
+
+@app.route("/api/admin/users/pro-verification", methods=["POST"])
+@admin_api
+def admin_user_pro_verification():
+    data = request.get_json(silent=True) or {}
+    try:
+        user_id = int(data.get("user_id") or 0)
+    except (TypeError, ValueError):
+        return jsonify(error="invalid_user"), 400
+
+    values = {}
+    for subject, col in CHAT_VERIFIED_COLUMN.items():
+        raw = data.get(subject)
+        values[col] = 1 if raw in (True, "true", "1", 1) else 0
+
+    db = get_db()
+    if not can_access_user(db, user_id):
+        return jsonify(error="not_found"), 404
+
+    row = db.execute(
+        """
+        SELECT level_german, level_math, level_english, level_biology,
+               level_pgw, level_spanish, level_art
+        FROM users WHERE id = ?
+        """,
+        (user_id,),
+    ).fetchone()
+    if row is None:
+        return jsonify(error="not_found"), 404
+
+    for subject, level_col in CHAT_LEVEL_COLUMN.items():
+        if row[level_col] != "pro":
+            values[CHAT_VERIFIED_COLUMN[subject]] = 0
+
+    db.execute(
+        """
+        UPDATE users
+        SET pro_verified_german = ?,
+            pro_verified_math = ?,
+            pro_verified_english = ?,
+            pro_verified_biology = ?,
+            pro_verified_pgw = ?,
+            pro_verified_spanish = ?,
+            pro_verified_art = ?
+        WHERE id = ?
+        """,
+        (
+            values["pro_verified_german"],
+            values["pro_verified_math"],
+            values["pro_verified_english"],
+            values["pro_verified_biology"],
+            values["pro_verified_pgw"],
+            values["pro_verified_spanish"],
+            values["pro_verified_art"],
+            user_id,
+        ),
+    )
+    db.commit()
+    return jsonify(
+        ok=True,
+        pro_verified_german=bool(values["pro_verified_german"]),
+        pro_verified_math=bool(values["pro_verified_math"]),
+        pro_verified_english=bool(values["pro_verified_english"]),
+        pro_verified_biology=bool(values["pro_verified_biology"]),
+        pro_verified_pgw=bool(values["pro_verified_pgw"]),
+        pro_verified_spanish=bool(values["pro_verified_spanish"]),
+        pro_verified_art=bool(values["pro_verified_art"]),
+    )
 
 
 @app.route("/api/admin/users/<int:user_id>", methods=["PUT"])
@@ -966,6 +1233,32 @@ def admin_app_settings_post():
     return jsonify(ok=True, school_logo_url=school_logo_url, school=school)
 
 
+@app.route("/api/admin/mail-status", methods=["GET"])
+@admin_api
+def admin_mail_status():
+    return jsonify(smtp=smtp_status())
+
+
+@app.route("/api/admin/mail-test", methods=["POST"])
+@admin_api
+def admin_mail_test():
+    data = request.get_json(silent=True) or {}
+    recipient = _valid_contact_email(data.get("email"))
+    if not recipient:
+        return jsonify(error="invalid_email"), 400
+    ok, err = send_smtp_mail(
+        [recipient],
+        "Lerngruppen-Finder: Test-Mail",
+        (
+            "Das ist eine Test-Mail vom Lerngruppen-Finder.\n\n"
+            "Wenn diese Nachricht angekommen ist, funktioniert der Mailserver.\n"
+        ),
+    )
+    if not ok:
+        return jsonify(ok=False, error=err or "send_failed", smtp=smtp_status()), 400
+    return jsonify(ok=True, smtp=smtp_status())
+
+
 @app.route("/api/admin/users/password", methods=["POST"])
 @admin_api
 def admin_user_password():
@@ -1004,7 +1297,14 @@ def admin_delete_message(message_id):
         """,
         (message_id,),
     ).fetchone()
-    if not row or (not is_dev_session() and (row["role"] == "dev" or (row["school"] or "") != admin_school(db))):
+    target_role = row["role"] if row and row["role"] in ROLES else "user"
+    if not row or (
+        not is_dev_session()
+        and (
+            (row["school"] or "") != admin_school(db)
+            or role_rank(target_role) >= role_rank(session.get("role"))
+        )
+    ):
         return jsonify(error="message_not_found"), 404
     db.execute("DELETE FROM chat_messages WHERE id = ?", (message_id,))
     db.commit()
@@ -1016,7 +1316,7 @@ def admin_delete_message(message_id):
 def admin_get_chats():
     db = get_db()
     result = []
-    for subject in CHAT_SUBJECTS:
+    for subject in CHAT_SUBJECT_ORDER:
         if is_dev_session():
             count = db.execute(
                 "SELECT COUNT(*) as c FROM chat_messages WHERE subject = ?",
@@ -1028,23 +1328,25 @@ def admin_get_chats():
             ).fetchone()["c"]
         else:
             school = admin_school(db)
+            hidden_roles = hidden_roles_for_session()
+            placeholders = ", ".join("?" for _ in hidden_roles)
             count = db.execute(
-                """
+                f"""
                 SELECT COUNT(*) as c
                 FROM chat_messages m
                 JOIN users u ON u.id = m.user_id
-                WHERE m.subject = ? AND u.school = ? AND u.role != 'dev'
+                WHERE m.subject = ? AND u.school = ? AND u.role NOT IN ({placeholders})
                 """,
-                (subject, school),
+                (subject, school, *hidden_roles),
             ).fetchone()["c"]
             rating_n = db.execute(
-                """
+                f"""
                 SELECT COUNT(*) as c
                 FROM chat_ratings r
                 JOIN users u ON u.id = r.user_id
-                WHERE r.subject = ? AND u.school = ? AND u.role != 'dev'
+                WHERE r.subject = ? AND u.school = ? AND u.role NOT IN ({placeholders})
                 """,
-                (subject, school),
+                (subject, school, *hidden_roles),
             ).fetchone()["c"]
         result.append(
             {
@@ -1064,15 +1366,25 @@ def admin_list_ratings():
     school_filter = ""
     params = []
     if not is_dev_session():
-        school_filter = "WHERE u.school = ? AND u.role != 'dev'"
-        params.append(admin_school(db))
+        hidden_roles = hidden_roles_for_session()
+        placeholders = ", ".join("?" for _ in hidden_roles)
+        school_filter = f"WHERE u.school = ? AND u.role NOT IN ({placeholders})"
+        params.extend([admin_school(db), *hidden_roles])
     rows = db.execute(
         f"""
         SELECT r.subject AS subject, r.user_id AS user_id, u.username AS username,
                r.rating AS rating, r.comment AS comment, r.created_at AS created_at,
-               s.points AS admin_points, s.note AS admin_note
+               s.points AS admin_points, s.note AS admin_note,
+               a.started_at AS started_at,
+               a.ended_at AS ended_at,
+               CASE
+                 WHEN a.started_at IS NOT NULL AND a.ended_at IS NOT NULL
+                 THEN CAST(strftime('%s', a.ended_at) - strftime('%s', a.started_at) AS INTEGER)
+                 ELSE NULL
+               END AS duration_seconds
         FROM chat_ratings r
         JOIN users u ON u.id = r.user_id
+        LEFT JOIN chat_appointments a ON a.subject = r.subject
         LEFT JOIN admin_subject_scores s
           ON s.user_id = r.user_id AND s.subject = r.subject
         {school_filter}
@@ -1094,6 +1406,9 @@ def admin_list_ratings():
                 "rating": int(row["rating"]),
                 "comment": (row["comment"] or "").strip(),
                 "created_at": row["created_at"],
+                "started_at": row["started_at"],
+                "ended_at": row["ended_at"],
+                "duration_seconds": row["duration_seconds"],
                 "admin_points": int(row["admin_points"] or 0),
                 "admin_note": row["admin_note"] or "",
             }
@@ -1201,7 +1516,7 @@ def invite_redeem():
     try:
         db.execute("BEGIN IMMEDIATE")
         inv = db.execute(
-            "SELECT code, school, role FROM invite_codes WHERE code = ? AND used_at IS NULL",
+            "SELECT code, school, class_name, role FROM invite_codes WHERE code = ? AND used_at IS NULL",
             (code,),
         ).fetchone()
         if not inv:
@@ -1210,14 +1525,15 @@ def invite_redeem():
 
         db.execute(
             """
-            INSERT INTO users (username, password_hash, level_german, level_math, level_english, role, school)
-            VALUES (?, ?, 'noob', 'noob', 'noob', ?, ?)
+            INSERT INTO users (username, password_hash, level_german, level_math, level_english, role, school, class_name)
+            VALUES (?, ?, 'noob', 'noob', 'noob', ?, ?, ?)
             """,
             (
                 username,
                 generate_password_hash(password),
                 inv["role"] if inv["role"] in ROLES else "user",
                 inv["school"] or "",
+                inv["class_name"] or "",
             ),
         )
         new_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -1268,7 +1584,7 @@ def api_invite_redeem():
     try:
         db.execute("BEGIN IMMEDIATE")
         inv = db.execute(
-            "SELECT code, school, role FROM invite_codes WHERE code = ? AND used_at IS NULL",
+            "SELECT code, school, class_name, role FROM invite_codes WHERE code = ? AND used_at IS NULL",
             (code,),
         ).fetchone()
         if not inv:
@@ -1277,14 +1593,15 @@ def api_invite_redeem():
 
         db.execute(
             """
-            INSERT INTO users (username, password_hash, level_german, level_math, level_english, role, school)
-            VALUES (?, ?, 'noob', 'noob', 'noob', ?, ?)
+            INSERT INTO users (username, password_hash, level_german, level_math, level_english, role, school, class_name)
+            VALUES (?, ?, 'noob', 'noob', 'noob', ?, ?, ?)
             """,
             (
                 username,
                 generate_password_hash(password),
                 inv["role"] if inv["role"] in ROLES else "user",
                 inv["school"] or "",
+                inv["class_name"] or "",
             ),
         )
         new_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -1324,7 +1641,7 @@ def admin_invite_list():
         params.append(admin_school(db))
     rows = db.execute(
         f"""
-        SELECT code, school, role, created_at
+        SELECT code, school, class_name, role, created_at
         FROM invite_codes
         {where}
         ORDER BY created_at DESC
@@ -1337,6 +1654,7 @@ def admin_invite_list():
             {
                 "code": r["code"],
                 "school": r["school"] or "",
+                "class_name": r["class_name"] or "",
                 "role": r["role"] or "user",
                 "created_at": r["created_at"],
             }
@@ -1350,12 +1668,15 @@ def admin_invite_list():
 def admin_invite_create():
     data = request.get_json(silent=True) or {}
     school = (data.get("school") or "").strip()
+    class_name = normalize_class_name(data.get("class_name"))
     role = (data.get("role") or "user").strip()
     if role not in ROLES:
         return jsonify(error="invalid_role"), 400
+    if class_name is None:
+        return jsonify(error="invalid_class"), 400
     if not is_dev_session():
         school = admin_school(get_db())
-        if role == "dev":
+        if role_rank(role) >= role_rank(session.get("role")):
             return jsonify(error="forbidden"), 403
     if len(school) > 120:
         return jsonify(error="invalid_school"), 400
@@ -1367,11 +1688,17 @@ def admin_invite_create():
         code = secrets.token_hex(6)
         try:
             db.execute(
-                "INSERT INTO invite_codes (code, created_by, school, role) VALUES (?, ?, ?, ?)",
-                (code, uid, school, role),
+                "INSERT INTO invite_codes (code, created_by, school, class_name, role) VALUES (?, ?, ?, ?, ?)",
+                (code, uid, school, class_name, role),
             )
             db.commit()
-            return jsonify(code=code, created_by=uid, school=school, role=role)
+            return jsonify(
+                code=code,
+                created_by=uid,
+                school=school,
+                class_name=class_name,
+                role=role,
+            )
         except sqlite3.IntegrityError:
             db.rollback()
             continue
@@ -1384,11 +1711,21 @@ def chat_rooms():
     db = get_db()
     uid = session["user_id"]
     rooms = []
-    for sub in ("german", "math", "english"):
+    creatable = []
+    for sub in CHAT_SUBJECT_ORDER:
+        if not user_may_access_subject(db, uid, sub):
+            continue
+        verified_col = CHAT_VERIFIED_COLUMN[sub]
         members = db.execute(
-            """
-            SELECT username, level FROM chat_presence
-            WHERE subject = ? ORDER BY username COLLATE NOCASE
+            f"""
+            SELECT
+                p.username,
+                p.level,
+                COALESCE(u.{verified_col}, 0) AS verified,
+                COALESCE(u.role, 'user') AS role
+            FROM chat_presence p
+            LEFT JOIN users u ON u.id = p.user_id
+            WHERE p.subject = ? ORDER BY p.username COLLATE NOCASE
             """,
             (sub,),
         ).fetchall()
@@ -1397,24 +1734,46 @@ def chat_rooms():
             (sub, uid),
         ).fetchone()
         appointment_row = db.execute(
-            "SELECT appointment FROM chat_appointments WHERE subject = ?",
+            "SELECT appointment, started FROM chat_appointments WHERE subject = ?",
             (sub,),
         ).fetchone()
         you_in = you is not None
         count_total = len(members)
+        viewer_lv = _user_level_for_subject(db, uid, sub)
+        if count_total == 0:
+            if viewer_lv == "pro":
+                creatable.append(
+                    {
+                        "subject": sub,
+                        "label": CHAT_SUBJECT_LABELS[sub],
+                    }
+                )
+            continue
         non_pro_n = sum(1 for m in members if m["level"] != "pro")
         pro_n = sum(1 for m in members if m["level"] == "pro")
+        if pro_n == 0:
+            db.execute("DELETE FROM chat_presence WHERE subject = ?", (sub,))
+            if viewer_lv == "pro":
+                creatable.append(
+                    {
+                        "subject": sub,
+                        "label": CHAT_SUBJECT_LABELS[sub],
+                    }
+                )
+            continue
         has_pro = pro_n >= 1
-        viewer_lv = _user_level_for_subject(db, uid, sub)
+        locked = bool(appointment_row and appointment_row["started"] and not you_in)
         if viewer_lv == "pro":
-            can_join = True
-            join_block = None
+            can_join = not locked
+            join_block = "started" if locked else None
             full = False
         else:
             slot_free = non_pro_n < CHAT_MAX_USERS
-            can_join = (you_in or (has_pro and slot_free))
+            can_join = (you_in or (has_pro and slot_free and not locked))
             if you_in:
                 join_block = None
+            elif locked:
+                join_block = "started"
             elif not has_pro:
                 join_block = "need_pro"
             elif not slot_free:
@@ -1436,13 +1795,20 @@ def chat_rooms():
                 "join_block": join_block,
                 "you_in": you_in,
                 "appointment": appointment_row["appointment"] if appointment_row else None,
+                "started": bool(appointment_row["started"]) if appointment_row else False,
                 "members": [
-                    {"username": m["username"], "level": m["level"]} for m in members
+                    {
+                        "username": m["username"],
+                        "level": m["level"],
+                        "pro_verified": m["level"] == "pro"
+                        and (bool(m["verified"]) or m["role"] in ("teacher", "admin", "dev")),
+                    }
+                    for m in members
                 ],
             }
         )
     db.commit()
-    return jsonify(rooms=rooms)
+    return jsonify(rooms=rooms, creatable=creatable)
 
 
 @app.route("/api/chat/appointment", methods=["GET"])
@@ -1453,23 +1819,26 @@ def chat_appointment_get():
         return jsonify(error="invalid_subject"), 400
     db = get_db()
     uid = session["user_id"]
+    if not user_may_access_subject(db, uid, subject):
+        return jsonify(error="invalid_subject"), 400
     row = db.execute(
-        "SELECT appointment, created_at, ended, ended_at FROM chat_appointments WHERE subject = ?",
+        "SELECT appointment, created_at, started, started_at, ended, ended_at FROM chat_appointments WHERE subject = ?",
         (subject,),
     ).fetchone()
     if not row:
         db.commit()
         return jsonify(appointment=None)
 
-    your_rating = db.execute(
-        "SELECT rating, comment FROM chat_ratings WHERE subject = ? AND user_id = ?",
-        (subject, uid),
-    ).fetchone()
     is_pro = _user_level_for_subject(db, uid, subject) == "pro"
+    your_rating = None
     rating_count = None
     rating_avg = None
     ratings = None
     if is_pro:
+        your_rating = db.execute(
+            "SELECT rating, comment FROM chat_ratings WHERE subject = ? AND user_id = ?",
+            (subject, uid),
+        ).fetchone()
         rating_stats = db.execute(
             "SELECT COUNT(*) AS count, AVG(rating) AS avg FROM chat_ratings WHERE subject = ?",
             (subject,),
@@ -1500,6 +1869,8 @@ def chat_appointment_get():
     return jsonify(
         appointment=row["appointment"],
         created_at=row["created_at"],
+        started=bool(row["started"]),
+        started_at=row["started_at"],
         ended=bool(row["ended"]),
         ended_at=row["ended_at"],
         your_rating={
@@ -1527,6 +1898,8 @@ def chat_appointment_post():
 
     db = get_db()
     uid = session["user_id"]
+    if not user_may_access_subject(db, uid, subject):
+        return jsonify(error="invalid_subject"), 400
     level = _user_level_for_subject(db, uid, subject)
     if level != "pro":
         return jsonify(error="permission"), 403
@@ -1540,7 +1913,13 @@ def chat_appointment_post():
         db.execute(
             """
             UPDATE chat_appointments
-            SET appointment = ?, created_by = ?, updated_at = ?
+            SET appointment = ?,
+                created_by = ?,
+                updated_at = ?,
+                started = 0,
+                started_at = NULL,
+                ended = 0,
+                ended_at = NULL
             WHERE subject = ?
             """,
             (appointment, uid, now, subject),
@@ -1557,6 +1936,46 @@ def chat_appointment_post():
     return jsonify(ok=True)
 
 
+@app.route("/api/chat/appointment/start", methods=["POST"])
+@login_required_api
+def chat_appointment_start():
+    data = request.get_json(silent=True) or {}
+    subject = chat_subject_key(data.get("subject"))
+    if not subject:
+        return jsonify(error="invalid_subject"), 400
+    db = get_db()
+    uid = session["user_id"]
+    if not user_may_access_subject(db, uid, subject):
+        return jsonify(error="invalid_subject"), 400
+    level = _user_level_for_subject(db, uid, subject)
+    if level != "pro":
+        return jsonify(error="permission"), 403
+    row = db.execute(
+        "SELECT started, ended FROM chat_appointments WHERE subject = ?",
+        (subject,),
+    ).fetchone()
+    if not row:
+        db.commit()
+        return jsonify(error="no_appointment"), 400
+    if row["ended"]:
+        db.commit()
+        return jsonify(error="already_ended"), 400
+    if row["started"]:
+        db.commit()
+        return jsonify(ok=True)
+    now = db.execute("SELECT datetime('now') AS now").fetchone()["now"]
+    db.execute(
+        """
+        UPDATE chat_appointments
+        SET started = 1, started_at = ?, updated_at = ?
+        WHERE subject = ?
+        """,
+        (now, now, subject),
+    )
+    db.commit()
+    return jsonify(ok=True)
+
+
 @app.route("/api/chat/appointment/end", methods=["POST"])
 @login_required_api
 def chat_appointment_end():
@@ -1566,11 +1985,13 @@ def chat_appointment_end():
         return jsonify(error="invalid_subject"), 400
     db = get_db()
     uid = session["user_id"]
+    if not user_may_access_subject(db, uid, subject):
+        return jsonify(error="invalid_subject"), 400
     level = _user_level_for_subject(db, uid, subject)
     if level != "pro":
         return jsonify(error="permission"), 403
     row = db.execute(
-        "SELECT ended FROM chat_appointments WHERE subject = ?",
+        "SELECT started, ended FROM chat_appointments WHERE subject = ?",
         (subject,),
     ).fetchone()
     if not row:
@@ -1579,6 +2000,9 @@ def chat_appointment_end():
     if row["ended"]:
         db.commit()
         return jsonify(ok=True)
+    if not row["started"]:
+        db.commit()
+        return jsonify(error="not_started"), 400
     now = db.execute("SELECT datetime('now') AS now").fetchone()["now"]
     db.execute(
         "UPDATE chat_appointments SET ended = 1, ended_at = ?, updated_at = ? WHERE subject = ?",
@@ -1606,6 +2030,12 @@ def chat_appointment_rate():
         return jsonify(error="need_comment"), 400
     db = get_db()
     uid = session["user_id"]
+    if not user_may_access_subject(db, uid, subject):
+        return jsonify(error="invalid_subject"), 400
+    level = _user_level_for_subject(db, uid, subject)
+    if level != "pro":
+        db.commit()
+        return jsonify(error="permission"), 403
     appointment = db.execute(
         "SELECT ended FROM chat_appointments WHERE subject = ?",
         (subject,),
@@ -1649,6 +2079,8 @@ def chat_join():
 
     db = get_db()
     uid = session["user_id"]
+    if not user_may_access_subject(db, uid, subject):
+        return jsonify(error="invalid_subject"), 400
     uname = session["username"]
     lvl = _user_level_for_subject(db, uid, subject)
 
@@ -1667,6 +2099,14 @@ def chat_join():
         )
         db.commit()
         return jsonify(ok=True, you_in=True)
+
+    appointment_row = db.execute(
+        "SELECT started FROM chat_appointments WHERE subject = ?",
+        (subject,),
+    ).fetchone()
+    if appointment_row and appointment_row["started"]:
+        db.commit()
+        return jsonify(error="room_closed"), 403
 
     if lvl != "pro":
         if _chat_presence_pro_count(db, subject) < 1:
@@ -1696,6 +2136,8 @@ def chat_leave():
         return jsonify(error="invalid_subject"), 400
     db = get_db()
     uid = session["user_id"]
+    if not user_may_access_subject(db, uid, subject):
+        return jsonify(error="invalid_subject"), 400
     prow = db.execute(
         "SELECT level FROM chat_presence WHERE subject = ? AND user_id = ?",
         (subject, uid),
@@ -1724,6 +2166,10 @@ def chat_messages():
 
     db = get_db()
     uid = session["user_id"]
+    if not user_may_access_subject(db, uid, subject):
+        return jsonify(error="invalid_subject"), 400
+    level_col = CHAT_LEVEL_COLUMN[subject]
+    verified_col = CHAT_VERIFIED_COLUMN[subject]
     in_room = db.execute(
         "SELECT 1 FROM chat_presence WHERE subject = ? AND user_id = ?",
         (subject, uid),
@@ -1746,11 +2192,20 @@ def chat_messages():
         (subject, uid),
     )
     rows = db.execute(
-        """
-        SELECT id, user_id, username, body, created_at
-        FROM chat_messages
-        WHERE subject = ? AND id > ?
-        ORDER BY id ASC
+        f"""
+        SELECT
+            m.id,
+            m.user_id,
+            m.username,
+            COALESCE(u.role, 'user') AS role,
+            COALESCE(u.{level_col}, 'noob') AS level,
+            COALESCE(u.{verified_col}, 0) AS pro_verified,
+            m.body,
+            m.created_at
+        FROM chat_messages m
+        LEFT JOIN users u ON u.id = m.user_id
+        WHERE m.subject = ? AND m.id > ?
+        ORDER BY m.id ASC
         LIMIT 200
         """,
         (subject, since_id),
@@ -1762,6 +2217,13 @@ def chat_messages():
                 "id": r["id"],
                 "user_id": r["user_id"],
                 "username": r["username"],
+                "role": r["role"],
+                "level": r["level"],
+                "pro_verified": r["level"] == "pro"
+                and (
+                    bool(r["pro_verified"])
+                    or r["role"] in ("teacher", "admin", "dev")
+                ),
                 "body": r["body"],
                 "created_at": r["created_at"],
             }
@@ -1784,6 +2246,8 @@ def chat_send():
 
     db = get_db()
     uid = session["user_id"]
+    if not user_may_access_subject(db, uid, subject):
+        return jsonify(error="invalid_subject"), 400
     uname = session["username"]
 
     in_room = db.execute(
@@ -1863,7 +2327,12 @@ def login():
 def _public_user_payload(db, user_id):
     row = db.execute(
         """
-        SELECT username, role, school, level_german, level_math, level_english,
+        SELECT username, role, school, class_name,
+               level_german, level_math, level_english, level_biology,
+               level_pgw, level_spanish, level_art,
+               pro_verified_german, pro_verified_math, pro_verified_english,
+               pro_verified_biology, pro_verified_pgw, pro_verified_spanish,
+               pro_verified_art,
                contact_email, notify_laden_email
         FROM users WHERE id = ?
         """,
@@ -1877,9 +2346,21 @@ def _public_user_payload(db, user_id):
         "username": row["username"],
         "role": role,
         "school": row["school"] or "",
+        "class_name": row["class_name"] or "",
         "level_german": row["level_german"],
         "level_math": row["level_math"],
         "level_english": row["level_english"],
+        "level_biology": row["level_biology"],
+        "level_pgw": row["level_pgw"],
+        "level_spanish": row["level_spanish"],
+        "level_art": row["level_art"],
+        "pro_verified_german": bool(row["pro_verified_german"]),
+        "pro_verified_math": bool(row["pro_verified_math"]),
+        "pro_verified_english": bool(row["pro_verified_english"]),
+        "pro_verified_biology": bool(row["pro_verified_biology"]),
+        "pro_verified_pgw": bool(row["pro_verified_pgw"]),
+        "pro_verified_spanish": bool(row["pro_verified_spanish"]),
+        "pro_verified_art": bool(row["pro_verified_art"]),
         "contact_email": row["contact_email"] or "",
         "notify_laden_email": bool(row["notify_laden_email"]),
         "school_logo_url": school_logo_url_for(db, row["school"] or ""),
@@ -1946,7 +2427,7 @@ def profile_update():
     levels = parse_subject_levels(request.form)
     if levels is None:
         return redirect("/settings.html?flash=levels")
-    lg, lm, le = levels
+    lg, lm, le, lb, lp, ls, la = levels
     raw_mail = (request.form.get("contact_email") or "").strip()
     contact_email = _valid_contact_email(raw_mail)
     if raw_mail and contact_email is None:
@@ -1971,6 +2452,18 @@ def profile_update():
 
     db = get_db()
     uid = session["user_id"]
+    level_row = db.execute(
+        """
+        SELECT level_german, level_math, level_english, level_biology,
+               level_pgw, level_spanish, level_art,
+               pro_verified_german, pro_verified_math, pro_verified_english,
+               pro_verified_biology, pro_verified_pgw, pro_verified_spanish,
+               pro_verified_art
+        FROM users WHERE id = ?
+        """,
+        (uid,),
+    ).fetchone()
+    vg, vm, ve, vb, vp, vs, va = next_pro_verification_values(level_row, levels)
     if pwd_change:
         row = db.execute(
             "SELECT password_hash FROM users WHERE id = ?",
@@ -1982,20 +2475,36 @@ def profile_update():
         db.execute(
             """
             UPDATE users SET level_german = ?, level_math = ?, level_english = ?,
+                level_biology = ?, level_pgw = ?, level_spanish = ?, level_art = ?,
+                pro_verified_german = ?, pro_verified_math = ?, pro_verified_english = ?,
+                pro_verified_biology = ?, pro_verified_pgw = ?, pro_verified_spanish = ?,
+                pro_verified_art = ?,
                 contact_email = ?, notify_laden_email = ?,
                 password_hash = ?
             WHERE id = ?
             """,
-            (lg, lm, le, email_val, notify_val, new_hash, uid),
+            (
+                lg, lm, le, lb, lp, ls, la,
+                vg, vm, ve, vb, vp, vs, va,
+                email_val, notify_val, new_hash, uid,
+            ),
         )
     else:
         db.execute(
             """
             UPDATE users SET level_german = ?, level_math = ?, level_english = ?,
+                level_biology = ?, level_pgw = ?, level_spanish = ?, level_art = ?,
+                pro_verified_german = ?, pro_verified_math = ?, pro_verified_english = ?,
+                pro_verified_biology = ?, pro_verified_pgw = ?, pro_verified_spanish = ?,
+                pro_verified_art = ?,
                 contact_email = ?, notify_laden_email = ?
             WHERE id = ?
             """,
-            (lg, lm, le, email_val, notify_val, uid),
+            (
+                lg, lm, le, lb, lp, ls, la,
+                vg, vm, ve, vb, vp, vs, va,
+                email_val, notify_val, uid,
+            ),
         )
     db.commit()
     return redirect("/settings.html?flash=saved")
@@ -2008,7 +2517,7 @@ def api_profile_update():
     levels = parse_subject_levels(data)
     if levels is None:
         return jsonify(error="levels"), 400
-    lg, lm, le = levels
+    lg, lm, le, lb, lp, ls, la = levels
     raw_mail = (data.get("contact_email") or "").strip()
     contact_email = _valid_contact_email(raw_mail)
     if raw_mail and contact_email is None:
@@ -2032,6 +2541,18 @@ def api_profile_update():
 
     db = get_db()
     uid = session["user_id"]
+    level_row = db.execute(
+        """
+        SELECT level_german, level_math, level_english, level_biology,
+               level_pgw, level_spanish, level_art,
+               pro_verified_german, pro_verified_math, pro_verified_english,
+               pro_verified_biology, pro_verified_pgw, pro_verified_spanish,
+               pro_verified_art
+        FROM users WHERE id = ?
+        """,
+        (uid,),
+    ).fetchone()
+    vg, vm, ve, vb, vp, vs, va = next_pro_verification_values(level_row, levels)
     if pwd_change:
         row = db.execute(
             "SELECT password_hash FROM users WHERE id = ?",
@@ -2042,6 +2563,10 @@ def api_profile_update():
         db.execute(
             """
             UPDATE users SET level_german = ?, level_math = ?, level_english = ?,
+                level_biology = ?, level_pgw = ?, level_spanish = ?, level_art = ?,
+                pro_verified_german = ?, pro_verified_math = ?, pro_verified_english = ?,
+                pro_verified_biology = ?, pro_verified_pgw = ?, pro_verified_spanish = ?,
+                pro_verified_art = ?,
                 contact_email = ?, notify_laden_email = ?, password_hash = ?
             WHERE id = ?
             """,
@@ -2049,6 +2574,17 @@ def api_profile_update():
                 lg,
                 lm,
                 le,
+                lb,
+                lp,
+                ls,
+                la,
+                vg,
+                vm,
+                ve,
+                vb,
+                vp,
+                vs,
+                va,
                 contact_email,
                 notify_val,
                 generate_password_hash(new_pwd),
@@ -2059,10 +2595,18 @@ def api_profile_update():
         db.execute(
             """
             UPDATE users SET level_german = ?, level_math = ?, level_english = ?,
+                level_biology = ?, level_pgw = ?, level_spanish = ?, level_art = ?,
+                pro_verified_german = ?, pro_verified_math = ?, pro_verified_english = ?,
+                pro_verified_biology = ?, pro_verified_pgw = ?, pro_verified_spanish = ?,
+                pro_verified_art = ?,
                 contact_email = ?, notify_laden_email = ?
             WHERE id = ?
             """,
-            (lg, lm, le, contact_email, notify_val, uid),
+            (
+                lg, lm, le, lb, lp, ls, la,
+                vg, vm, ve, vb, vp, vs, va,
+                contact_email, notify_val, uid,
+            ),
         )
     db.commit()
     return jsonify(ok=True, user=_public_user_payload(db, uid))
