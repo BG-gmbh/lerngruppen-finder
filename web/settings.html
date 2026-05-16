@@ -61,6 +61,38 @@
               <label class="radio-pill"><input type="radio" name="level_english" value="noob"><span>Noob</span></label>
             </div>
           </div>
+          <div class="subject-row">
+            <span class="subject-name">Biologie</span>
+            <div class="radio-row">
+              <label class="radio-pill"><input type="radio" name="level_biology" value="pro" required><span>Pro</span></label>
+              <label class="radio-pill"><input type="radio" name="level_biology" value="medium"><span>Mittel</span></label>
+              <label class="radio-pill"><input type="radio" name="level_biology" value="noob"><span>Noob</span></label>
+            </div>
+          </div>
+          <div class="subject-row">
+            <span class="subject-name">PGW</span>
+            <div class="radio-row">
+              <label class="radio-pill"><input type="radio" name="level_pgw" value="pro" required><span>Pro</span></label>
+              <label class="radio-pill"><input type="radio" name="level_pgw" value="medium"><span>Mittel</span></label>
+              <label class="radio-pill"><input type="radio" name="level_pgw" value="noob"><span>Noob</span></label>
+            </div>
+          </div>
+          <div class="subject-row">
+            <span class="subject-name">Spanisch</span>
+            <div class="radio-row">
+              <label class="radio-pill"><input type="radio" name="level_spanish" value="pro" required><span>Pro</span></label>
+              <label class="radio-pill"><input type="radio" name="level_spanish" value="medium"><span>Mittel</span></label>
+              <label class="radio-pill"><input type="radio" name="level_spanish" value="noob"><span>Noob</span></label>
+            </div>
+          </div>
+          <div class="subject-row">
+            <span class="subject-name">Kunst</span>
+            <div class="radio-row">
+              <label class="radio-pill"><input type="radio" name="level_art" value="pro" required><span>Pro</span></label>
+              <label class="radio-pill"><input type="radio" name="level_art" value="medium"><span>Mittel</span></label>
+              <label class="radio-pill"><input type="radio" name="level_art" value="noob"><span>Noob</span></label>
+            </div>
+          </div>
         </fieldset>
 
         <fieldset class="subject-levels subject-levels-plain" style="margin-top:1.25rem;">
@@ -106,6 +138,10 @@
         ["level_german", data.level_german],
         ["level_math", data.level_math],
         ["level_english", data.level_english],
+        ["level_biology", data.level_biology],
+        ["level_pgw", data.level_pgw],
+        ["level_spanish", data.level_spanish],
+        ["level_art", data.level_art],
       ].forEach(function (pair) {
         var name = pair[0];
         var val = pair[1];

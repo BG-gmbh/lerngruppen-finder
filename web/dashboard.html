@@ -42,7 +42,7 @@
         Fachchat: <a href="/chat.html">Chat öffnen</a> — Noob/Mittel mit dabei, sobald mindestens ein <strong>Pro</strong> im Fach im Raum ist. Die Zahl „5“ gilt nur für Anwesende <em>ohne</em> Pro-Stufe; Pros zählen dafür nicht.
       </p>
       <p class="muted">
-        Fächer (Deutsch, Mathe, Englisch) änderst du unter
+        Fächer änderst du unter
         <a href="/settings.html">Einstellungen</a>.
       </p>
     </section>
@@ -62,13 +62,15 @@
       if (classEl) {
         classEl.textContent = data.class_name ? "Klasse: " + data.class_name : "Keine Klasse festgelegt";
       }
-      el.textContent =
-        "Deutsch: " +
-        labelLevel(data.level_german) +
-        " · Mathe: " +
-        labelLevel(data.level_math) +
-        " · Englisch: " +
-        labelLevel(data.level_english);
+      el.textContent = [
+        "Deutsch: " + labelLevel(data.level_german),
+        "Mathe: " + labelLevel(data.level_math),
+        "Englisch: " + labelLevel(data.level_english),
+        "Biologie: " + labelLevel(data.level_biology),
+        "PGW: " + labelLevel(data.level_pgw),
+        "Spanisch: " + labelLevel(data.level_spanish),
+        "Kunst: " + labelLevel(data.level_art),
+      ].join(" · ");
     }
 
     fetch("/api/me", { credentials: "same-origin" })

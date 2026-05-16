@@ -119,7 +119,7 @@ def _user_points_sum(db, user_id):
         """
         SELECT COALESCE(SUM(points), 0) AS s
         FROM admin_subject_scores
-        WHERE user_id = ? AND subject IN ('german', 'math', 'english')
+        WHERE user_id = ? AND subject IN ('german', 'math', 'english', 'biology', 'pgw', 'spanish', 'art')
         """,
         (user_id,),
     ).fetchone()
@@ -132,7 +132,7 @@ def _deduct_user_points(db, user_id, amount, actor_user_id):
     rows = db.execute(
         """
         SELECT subject, points FROM admin_subject_scores
-        WHERE user_id = ? AND points > 0 AND subject IN ('german', 'math', 'english')
+        WHERE user_id = ? AND points > 0 AND subject IN ('german', 'math', 'english', 'biology', 'pgw', 'spanish', 'art')
         ORDER BY subject
         """,
         (user_id,),

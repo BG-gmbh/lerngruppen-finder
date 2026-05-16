@@ -10,6 +10,16 @@
   var userLevels = null;
   var userRole = null;
   var lastAppointmentUiKey = null;
+  var creatableSubjects = [];
+  var subjects = [
+    ["german", "Deutsch"],
+    ["math", "Mathe"],
+    ["english", "Englisch"],
+    ["biology", "Biologie"],
+    ["pgw", "PGW"],
+    ["spanish", "Spanisch"],
+    ["art", "Kunst"],
+  ];
 
   function $(id) {
     return document.getElementById(id);
@@ -152,7 +162,9 @@
       maxUsers = res.data.rooms[0] && res.data.rooms[0].max ? res.data.rooms[0].max : 5;
       var lbl = $("max-users-label");
       if (lbl) lbl.textContent = String(maxUsers);
+      creatableSubjects = res.data.creatable || [];
       renderLobby(res.data.rooms);
+      showCreateRoomButton();
     });
   }
 
@@ -240,7 +252,15 @@
       $("chat-messages").innerHTML = "";
       $("lobby").classList.add("hidden");
       $("chat-panel").classList.remove("hidden");
-      var labels = { german: "Deutsch", math: "Mathe", english: "Englisch" };
+      var labels = {
+        german: "Deutsch",
+        math: "Mathe",
+        english: "Englisch",
+        biology: "Biologie",
+        pgw: "PGW",
+        spanish: "Spanisch",
+        art: "Kunst",
+      };
       $("chat-title").textContent = "Chat: " + (labels[subject] || subject);
       stopRoomsPoll();
       stopMsgPoll();
@@ -595,13 +615,9 @@
 
   function showCreateRoomButton() {
     if (!userLevels) return;
-    var proSubjects = [];
-    if (canCreateSubject("german")) proSubjects.push("german");
-    if (canCreateSubject("math")) proSubjects.push("math");
-    if (canCreateSubject("english")) proSubjects.push("english");
     var btn = $("btn-create-room");
     if (!btn) return;
-    btn.style.display = proSubjects.length ? "inline-flex" : "none";
+    btn.style.display = creatableSubjects.length ? "inline-flex" : "none";
   }
 
   function canCreateSubject(subject) {
@@ -611,9 +627,9 @@
 
   function chooseProSubject() {
     var choices = [];
-    if (canCreateSubject("german")) choices.push("Deutsch|german");
-    if (canCreateSubject("math")) choices.push("Mathe|math");
-    if (canCreateSubject("english")) choices.push("Englisch|english");
+    creatableSubjects.forEach(function (room) {
+      if (canCreateSubject(room.subject)) choices.push(room.label + "|" + room.subject);
+    });
     if (!choices.length) return null;
     if (choices.length === 1) return choices[0].split("|")[1];
     var text = "Wähle ein Fach:\n" + choices.map(function (c, idx) {

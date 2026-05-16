@@ -139,9 +139,17 @@ class UserProfile {
     required this.levelGerman,
     required this.levelMath,
     required this.levelEnglish,
+    required this.levelBiology,
+    required this.levelPgw,
+    required this.levelSpanish,
+    required this.levelArt,
     required this.proVerifiedGerman,
     required this.proVerifiedMath,
     required this.proVerifiedEnglish,
+    required this.proVerifiedBiology,
+    required this.proVerifiedPgw,
+    required this.proVerifiedSpanish,
+    required this.proVerifiedArt,
     required this.contactEmail,
     required this.notifyLadenEmail,
     required this.schoolLogoUrl,
@@ -156,9 +164,17 @@ class UserProfile {
       levelGerman: json['level_german']?.toString() ?? 'noob',
       levelMath: json['level_math']?.toString() ?? 'noob',
       levelEnglish: json['level_english']?.toString() ?? 'noob',
+      levelBiology: json['level_biology']?.toString() ?? 'noob',
+      levelPgw: json['level_pgw']?.toString() ?? 'noob',
+      levelSpanish: json['level_spanish']?.toString() ?? 'noob',
+      levelArt: json['level_art']?.toString() ?? 'noob',
       proVerifiedGerman: json['pro_verified_german'] == true,
       proVerifiedMath: json['pro_verified_math'] == true,
       proVerifiedEnglish: json['pro_verified_english'] == true,
+      proVerifiedBiology: json['pro_verified_biology'] == true,
+      proVerifiedPgw: json['pro_verified_pgw'] == true,
+      proVerifiedSpanish: json['pro_verified_spanish'] == true,
+      proVerifiedArt: json['pro_verified_art'] == true,
       contactEmail: json['contact_email']?.toString() ?? '',
       notifyLadenEmail: json['notify_laden_email'] == true,
       schoolLogoUrl: json['school_logo_url']?.toString() ?? '',
@@ -172,9 +188,17 @@ class UserProfile {
   final String levelGerman;
   final String levelMath;
   final String levelEnglish;
+  final String levelBiology;
+  final String levelPgw;
+  final String levelSpanish;
+  final String levelArt;
   final bool proVerifiedGerman;
   final bool proVerifiedMath;
   final bool proVerifiedEnglish;
+  final bool proVerifiedBiology;
+  final bool proVerifiedPgw;
+  final bool proVerifiedSpanish;
+  final bool proVerifiedArt;
   final String contactEmail;
   final bool notifyLadenEmail;
   final String schoolLogoUrl;
@@ -184,6 +208,10 @@ class UserProfile {
       'german' => levelGerman,
       'math' => levelMath,
       'english' => levelEnglish,
+      'biology' => levelBiology,
+      'pgw' => levelPgw,
+      'spanish' => levelSpanish,
+      'art' => levelArt,
       _ => 'noob',
     };
   }
@@ -663,6 +691,10 @@ class DashboardScreen extends StatelessWidget {
             LevelChip(label: 'Deutsch', value: user.levelGerman),
             LevelChip(label: 'Mathe', value: user.levelMath),
             LevelChip(label: 'Englisch', value: user.levelEnglish),
+            LevelChip(label: 'Biologie', value: user.levelBiology),
+            LevelChip(label: 'PGW', value: user.levelPgw),
+            LevelChip(label: 'Spanisch', value: user.levelSpanish),
+            LevelChip(label: 'Kunst', value: user.levelArt),
           ],
         ),
         const SizedBox(height: 20),
@@ -1455,6 +1487,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late String german;
   late String math;
   late String english;
+  late String biology;
+  late String pgw;
+  late String spanish;
+  late String art;
   late final TextEditingController email;
   late final TextEditingController currentPassword;
   late final TextEditingController newPassword;
@@ -1469,6 +1505,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     german = widget.user.levelGerman;
     math = widget.user.levelMath;
     english = widget.user.levelEnglish;
+    biology = widget.user.levelBiology;
+    pgw = widget.user.levelPgw;
+    spanish = widget.user.levelSpanish;
+    art = widget.user.levelArt;
     email = TextEditingController(text: widget.user.contactEmail);
     currentPassword = TextEditingController();
     newPassword = TextEditingController();
@@ -1506,6 +1546,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
           label: 'Englisch',
           value: english,
           onChanged: (v) => setState(() => english = v),
+        ),
+        LevelSelector(
+          label: 'Biologie',
+          value: biology,
+          onChanged: (v) => setState(() => biology = v),
+        ),
+        LevelSelector(
+          label: 'PGW',
+          value: pgw,
+          onChanged: (v) => setState(() => pgw = v),
+        ),
+        LevelSelector(
+          label: 'Spanisch',
+          value: spanish,
+          onChanged: (v) => setState(() => spanish = v),
+        ),
+        LevelSelector(
+          label: 'Kunst',
+          value: art,
+          onChanged: (v) => setState(() => art = v),
         ),
         const SizedBox(height: 12),
         TextField(
@@ -1589,6 +1649,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         'level_german': german,
         'level_math': math,
         'level_english': english,
+        'level_biology': biology,
+        'level_pgw': pgw,
+        'level_spanish': spanish,
+        'level_art': art,
         'contact_email': email.text.trim(),
         'notify_laden_email': notify,
         if (wantsPasswordChange) ...{
@@ -2079,7 +2143,11 @@ class _AdminScreenState extends State<AdminScreen> {
   bool _hasProLevel(Map<String, dynamic> user) {
     return user['level_german'] == 'pro' ||
         user['level_math'] == 'pro' ||
-        user['level_english'] == 'pro';
+        user['level_english'] == 'pro' ||
+        user['level_biology'] == 'pro' ||
+        user['level_pgw'] == 'pro' ||
+        user['level_spanish'] == 'pro' ||
+        user['level_art'] == 'pro';
   }
 
   String _proVerificationSummary(Map<String, dynamic> user) {
@@ -2093,6 +2161,10 @@ class _AdminScreenState extends State<AdminScreen> {
     add('Deutsch', 'level_german', 'pro_verified_german');
     add('Mathe', 'level_math', 'pro_verified_math');
     add('Englisch', 'level_english', 'pro_verified_english');
+    add('Biologie', 'level_biology', 'pro_verified_biology');
+    add('PGW', 'level_pgw', 'pro_verified_pgw');
+    add('Spanisch', 'level_spanish', 'pro_verified_spanish');
+    add('Kunst', 'level_art', 'pro_verified_art');
     return items.join(', ');
   }
 
@@ -2658,6 +2730,10 @@ class _AdminScreenState extends State<AdminScreen> {
     var german = user['pro_verified_german'] == true;
     var math = user['pro_verified_math'] == true;
     var english = user['pro_verified_english'] == true;
+    var biology = user['pro_verified_biology'] == true;
+    var pgw = user['pro_verified_pgw'] == true;
+    var spanish = user['pro_verified_spanish'] == true;
+    var art = user['pro_verified_art'] == true;
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -2684,6 +2760,30 @@ class _AdminScreenState extends State<AdminScreen> {
                 value: english,
                 onChanged: (value) => setDialogState(() => english = value),
               ),
+              _proVerifyTile(
+                label: 'Biologie',
+                level: user['level_biology'],
+                value: biology,
+                onChanged: (value) => setDialogState(() => biology = value),
+              ),
+              _proVerifyTile(
+                label: 'PGW',
+                level: user['level_pgw'],
+                value: pgw,
+                onChanged: (value) => setDialogState(() => pgw = value),
+              ),
+              _proVerifyTile(
+                label: 'Spanisch',
+                level: user['level_spanish'],
+                value: spanish,
+                onChanged: (value) => setDialogState(() => spanish = value),
+              ),
+              _proVerifyTile(
+                label: 'Kunst',
+                level: user['level_art'],
+                value: art,
+                onChanged: (value) => setDialogState(() => art = value),
+              ),
             ],
           ),
           actions: [
@@ -2696,6 +2796,10 @@ class _AdminScreenState extends State<AdminScreen> {
                 'german': german,
                 'math': math,
                 'english': english,
+                'biology': biology,
+                'pgw': pgw,
+                'spanish': spanish,
+                'art': art,
               }),
               child: const Text('Speichern'),
             ),
