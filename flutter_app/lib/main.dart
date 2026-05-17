@@ -856,6 +856,8 @@ class _ChatScreenState extends State<ChatScreen> {
     final members = (room['members'] as List? ?? const []);
     final canJoin = room['can_join'] == true;
     final joinBlock = room['join_block']?.toString();
+    final appointmentText = room['appointment']?.toString() ?? '';
+    final locationText = room['location']?.toString() ?? '';
     final buttonLabel = room['you_in'] == true
         ? 'Fortsetzen'
         : joinBlock == 'started'
@@ -876,6 +878,15 @@ class _ChatScreenState extends State<ChatScreen> {
                 '${room['count_non_pro']} / ${room['max']} ohne Pro, '
                 '${room['count_pro']} Pro online',
               ),
+              if (appointmentText.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  locationText.isEmpty
+                      ? 'Termin: $appointmentText'
+                      : 'Termin: $appointmentText · Ort: $locationText',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
               if (members.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
@@ -987,6 +998,15 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(msg['body']?.toString() ?? ''),
+                        if (!own)
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton.icon(
+                              onPressed: () => _reportMessage(msg),
+                              icon: const Icon(Icons.flag_outlined, size: 18),
+                              label: const Text('Melden'),
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -1030,6 +1050,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (active == null) return const SizedBox.shrink();
     final data = appointment;
     final appointmentText = data?['appointment']?.toString() ?? '';
+    final locationText = data?['location']?.toString() ?? '';
     final started = data?['started'] == true;
     final ended = data?['ended'] == true;
     final yourRating = data?['your_rating'] as Map<String, dynamic>?;
@@ -1051,7 +1072,9 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: Text(
                     appointmentText.isEmpty
                         ? 'Kein Termin gesetzt'
-                        : 'Termin: $appointmentText',
+                        : locationText.isEmpty
+                            ? 'Termin: $appointmentText'
+                            : 'Termin: $appointmentText · Ort: $locationText',
                   ),
                 ),
               ],
@@ -1212,7 +1235,15 @@ class _ChatScreenState extends State<ChatScreen> {
         if (!silent) error = null;
       });
     } catch (ex) {
-      if (!silent) setState(() => error = ex.toString());
+      if (ex is ApiException && ex.code == 'appointment_ended') {
+        setState(() {
+          messages = const [];
+          since = 0;
+          if (!silent) error = friendlyError(ex);
+        });
+      } else if (!silent) {
+        setState(() => error = ex.toString());
+      }
     }
   }
 
@@ -1220,6 +1251,11 @@ class _ChatScreenState extends State<ChatScreen> {
     final active = subject;
     final body = input.text.trim();
     if (active == null || body.isEmpty) return;
+    if (appointment?['ended'] == true) {
+      input.clear();
+      setState(() => error = 'Der Termin ist beendet. Der Chat wurde geleert.');
+      return;
+    }
     input.clear();
     try {
       await widget.api.postJson('/api/chat/send', {
@@ -1228,7 +1264,30 @@ class _ChatScreenState extends State<ChatScreen> {
       });
       await _loadMessages(silent: true);
     } catch (ex) {
-      setState(() => error = ex.toString());
+      setState(() => error = friendlyError(ex));
+    }
+  }
+
+  Future<void> _reportMessage(Map<String, dynamic> message) async {
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (context) => const TextEntryDialog(
+        title: 'Nachricht melden',
+        label: 'Grund (optional)',
+        initialValue: '',
+        obscure: false,
+        maxLength: 300,
+      ),
+    );
+    if (reason == null) return;
+    try {
+      await widget.api.postJson('/api/chat/report-message', {
+        'message_id': message['id'],
+        'reason': reason.trim(),
+      });
+      setState(() => error = 'Nachricht wurde gemeldet.');
+    } catch (ex) {
+      setState(() => error = friendlyError(ex));
     }
   }
 
@@ -1241,6 +1300,10 @@ class _ChatScreenState extends State<ChatScreen> {
       });
       setState(() {
         appointment = data;
+        if (data['ended'] == true) {
+          messages = const [];
+          since = 0;
+        }
         if (!silent) error = null;
       });
     } catch (ex) {
@@ -1267,10 +1330,14 @@ class _ChatScreenState extends State<ChatScreen> {
     if (time == null) return;
     final value =
         '${date.year}-${_two(date.month)}-${_two(date.day)} ${_two(time.hour)}:${_two(time.minute)}';
+    if (!mounted) return;
+    final location = await _appointmentLocationDialog();
+    if (location == null) return;
     try {
       await widget.api.postJson('/api/chat/appointment', {
         'subject': active,
         'appointment': value,
+        'location': location,
       });
       await _loadAppointment();
       await _loadRooms(silent: true);
@@ -1279,12 +1346,52 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<String?> _appointmentLocationDialog() async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Ort festlegen'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 120,
+          decoration: const InputDecoration(labelText: 'Ort'),
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) {
+            final value = controller.text.trim();
+            if (value.isNotEmpty) Navigator.pop(context, value);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final value = controller.text.trim();
+              if (value.isNotEmpty) Navigator.pop(context, value);
+            },
+            child: const Text('Speichern'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return result?.trim().isEmpty == true ? null : result?.trim();
+  }
+
   Future<void> _endAppointment() async {
     final active = subject;
     if (active == null) return;
     try {
       await widget.api.postJson('/api/chat/appointment/end', {
         'subject': active,
+      });
+      setState(() {
+        messages = const [];
+        since = 0;
       });
       await _loadAppointment();
     } catch (ex) {
@@ -1727,6 +1834,7 @@ class _AdminScreenState extends State<AdminScreen> {
   List<dynamic> users = const [];
   List<dynamic> codes = const [];
   List<dynamic> chats = const [];
+  List<dynamic> chatReports = const [];
   List<dynamic> ratings = const [];
   List<dynamic> shopItems = const [];
   List<dynamic> teachers = const [];
@@ -1924,10 +2032,20 @@ class _AdminScreenState extends State<AdminScreen> {
             title: raw['code']?.toString() ?? '',
             subtitle: _codeSubtitle(raw as Map<String, dynamic>),
             leading: Icons.vpn_key_outlined,
-            trailing: IconButton(
-              tooltip: 'Code kopieren',
-              onPressed: () => _copyCode(raw['code']?.toString() ?? ''),
-              icon: const Icon(Icons.copy),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: 'Code kopieren',
+                  onPressed: () => _copyCode(raw['code']?.toString() ?? ''),
+                  icon: const Icon(Icons.copy),
+                ),
+                IconButton(
+                  tooltip: 'Code löschen',
+                  onPressed: () => _deleteInviteCode(raw),
+                  icon: const Icon(Icons.delete_outline),
+                ),
+              ],
             ),
           ),
       ],
@@ -1944,12 +2062,38 @@ class _AdminScreenState extends State<AdminScreen> {
           AdminCard(
             title: raw['label']?.toString() ?? raw['subject']?.toString() ?? '',
             subtitle:
-                '${raw['message_count'] ?? 0} Nachrichten · ${raw['rating_count'] ?? 0} Bewertungen',
+                '${raw['message_count'] ?? 0} Nachrichten · ${raw['rating_count'] ?? 0} Bewertungen · ${raw['report_count'] ?? 0} Meldungen',
             leading: Icons.forum_outlined,
             trailing: IconButton(
               tooltip: 'Fachchat löschen',
               onPressed: () => _deleteChat(raw as Map<String, dynamic>),
               icon: const Icon(Icons.delete_outline),
+            ),
+          ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'Gemeldete Nachrichten',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (chatReports.isEmpty && !loading)
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: Text('Keine offenen Meldungen.'),
+          ),
+        for (final raw in chatReports)
+          AdminCard(
+            title:
+                '${raw['subject_label'] ?? raw['subject']} · ${raw['reported_username']}',
+            subtitle: _reportSubtitle(raw as Map<String, dynamic>),
+            leading: Icons.flag_outlined,
+            trailing: IconButton(
+              tooltip: 'Meldung erledigen',
+              onPressed: () => _resolveReport(raw),
+              icon: const Icon(Icons.check_circle_outline),
             ),
           ),
       ],
@@ -2214,6 +2358,16 @@ class _AdminScreenState extends State<AdminScreen> {
         '\nAdmin-Punkte: ${rating['admin_points'] ?? 0} · ${rating['admin_note'] ?? ''}';
   }
 
+  String _reportSubtitle(Map<String, dynamic> report) {
+    final reason = report['reason']?.toString() ?? '';
+    final className = report['reported_class_name']?.toString() ?? '';
+    return '"${report['body'] ?? ''}"'
+        '\nGemeldet von ${report['reporter_username'] ?? ''}'
+        '${reason.isEmpty ? '' : '\nGrund: $reason'}'
+        '${className.isEmpty ? '' : '\nKlasse: $className'}'
+        '\n${report['created_at'] ?? ''}';
+  }
+
   String _durationLabel(Object? value) {
     final seconds =
         value is int ? value : int.tryParse(value?.toString() ?? '');
@@ -2267,6 +2421,9 @@ class _AdminScreenState extends State<AdminScreen> {
           ),
         AdminSection.schools => await widget.api.getJson('/api/admin/schools'),
       };
+      final reportsData = section == AdminSection.chats
+          ? await widget.api.getJson('/api/admin/chat-reports')
+          : null;
       if (!mounted) return;
       setState(() {
         switch (section) {
@@ -2278,6 +2435,7 @@ class _AdminScreenState extends State<AdminScreen> {
             break;
           case AdminSection.chats:
             chats = data['chats'] as List? ?? const [];
+            chatReports = reportsData?['reports'] as List? ?? const [];
             break;
           case AdminSection.ratings:
             ratings = data['ratings'] as List? ?? const [];
@@ -2438,6 +2596,21 @@ class _AdminScreenState extends State<AdminScreen> {
     );
   }
 
+  Future<void> _deleteInviteCode(Map<String, dynamic> code) async {
+    final value = code['code']?.toString() ?? '';
+    if (value.isEmpty) return;
+    final ok = await _confirm(
+      'Einladungscode löschen?',
+      '$value wird gelöscht und kann danach nicht mehr benutzt werden.',
+    );
+    if (!ok) return;
+    await _run('Code gelöscht', () async {
+      await widget.api.deleteJson(
+        '/api/admin/invite-codes/${Uri.encodeComponent(value)}',
+      );
+    });
+  }
+
   Future<void> _editLogo() async {
     await _loadSchools();
     final value = await _textDialog(
@@ -2482,6 +2655,15 @@ class _AdminScreenState extends State<AdminScreen> {
     await _run('Chat gelöscht', () async {
       await widget.api.deleteJson(
         '/api/admin/delete_chat/${Uri.encodeComponent(chat['subject'].toString())}',
+      );
+    });
+  }
+
+  Future<void> _resolveReport(Map<String, dynamic> report) async {
+    await _run('Meldung erledigt', () async {
+      await widget.api.postJson(
+        '/api/admin/chat-reports/${report['id']}/resolve',
+        {},
       );
     });
   }
@@ -2879,7 +3061,9 @@ class _AdminScreenState extends State<AdminScreen> {
     var role = 'user';
     final roles = widget.isDev
         ? const ['user', 'teacher', 'admin', 'dev']
-        : const ['user', 'teacher', 'admin'];
+        : widget.adminRole == 'admin'
+            ? const ['user', 'teacher']
+            : const ['user'];
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -3381,11 +3565,19 @@ String friendlyError(Object ex) {
       'invalid_logo_url' => 'Logo-URL ist ungueltig.',
       'invalid_role' => 'Rolle ist ungueltig.',
       'invalid_datetime' => 'Bitte ein gültiges Datum wählen.',
+      'empty_location' => 'Bitte einen Ort eingeben.',
+      'invalid_location' => 'Der Ort ist zu lang.',
       'permission' => 'Nur Pros können diesen Termin ändern.',
       'no_appointment' => 'Es gibt keinen Termin.',
       'not_started' => 'Der Termin wurde noch nicht gestartet.',
       'already_ended' => 'Der Termin ist schon beendet.',
+      'appointment_ended' => 'Der Termin ist beendet. Der Chat wurde geleert.',
       'room_closed' => 'Der Termin läuft schon. Der Raum ist geschlossen.',
+      'already_reported' => 'Du hast diese Nachricht schon gemeldet.',
+      'message_not_found' => 'Diese Nachricht gibt es nicht mehr.',
+      'own_message' => 'Eigene Nachrichten kannst du nicht melden.',
+      'reason_too_long' => 'Der Meldegrund ist zu lang.',
+      'report_not_found' => 'Diese Meldung gibt es nicht mehr.',
       'not_ended' => 'Der Termin wurde noch nicht beendet.',
       'need_comment' => 'Bei weniger als 4 Sternen ist ein Kommentar nötig.',
       'not_in_room' => 'Du bist nicht mehr im Raum.',

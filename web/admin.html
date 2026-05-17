@@ -132,6 +132,9 @@
       <p class="field-hint">Nachrichten, Termine und Bewertungen eines Fachs löschen (Nutzerkonten bleiben; gespeicherte <strong>Admin-Punkte</strong> pro Nutzer/Fach bleiben erhalten).</p>
       <ul id="chat-admin-list" class="code-list"></ul>
 
+      <h3 class="subsection-title">Gemeldete Nachrichten</h3>
+      <ul id="chat-report-list" class="code-list"></ul>
+
       <h3 class="subsection-title">Termin-Bewertungen</h3>
       <p class="field-hint">Alle abgegebenen Sterne-Bewertungen. Pro Nutzer und Fach kannst du unten <strong>Admin-Punkte</strong> und eine kurze Notiz speichern (z. B. Anrechnung oder Hinweis fürs Team).</p>
       <div id="admin-ratings-wrap" class="table-scroll"></div>
@@ -473,6 +476,33 @@
                 });
               });
               li.appendChild(copy);
+              var del = document.createElement("button");
+              del.type = "button";
+              del.className = "btn btn-small btn-secondary";
+              del.style.marginLeft = "0.5rem";
+              del.textContent = "Löschen";
+              del.addEventListener("click", function () {
+                if (!window.confirm("Einladungscode " + c.code + " löschen?")) {
+                  return;
+                }
+                fetch("/api/admin/invite-codes/" + encodeURIComponent(c.code), {
+                  method: "DELETE",
+                  credentials: "same-origin",
+                })
+                  .then(function (r) {
+                    return r.json().then(function (d) {
+                      return { ok: r.ok, d: d };
+                    });
+                  })
+                  .then(function (x) {
+                    if (!x.ok) {
+                      window.alert("Code konnte nicht gelöscht werden.");
+                      return;
+                    }
+                    loadCodes();
+                  });
+              });
+              li.appendChild(del);
               ul.appendChild(li);
             });
           });
@@ -504,6 +534,15 @@
         var role = window.prompt("Rolle für diesen Code: " + roleHint, "user");
         if (role === null) return;
         role = role.trim() || "user";
+        var allowedRoles = window.__currentRole === "teacher"
+          ? ["user"]
+          : window.__currentRole === "admin"
+            ? ["user", "teacher"]
+            : ["user", "teacher", "admin", "dev"];
+        if (allowedRoles.indexOf(role) === -1) {
+          window.alert("Diese Rolle darfst du nicht für Einladungscodes vergeben.");
+          return;
+        }
         fetch("/api/admin/invite-codes", {
           method: "POST",
           credentials: "same-origin",
@@ -704,7 +743,9 @@
                   c.message_count +
                   " Nachricht(en), " +
                   (c.rating_count != null ? c.rating_count : 0) +
-                  " Bewertung(en)";
+                  " Bewertung(en), " +
+                  (c.report_count != null ? c.report_count : 0) +
+                  " Meldung(en)";
                 li.appendChild(span);
                 var del = document.createElement("button");
                 del.type = "button";
@@ -742,6 +783,7 @@
                 ul.appendChild(li);
               });
             }
+            loadChatReports();
             return fetch("/api/admin/ratings", { credentials: "same-origin" });
           })
           .then(function (r) {
@@ -750,6 +792,67 @@
           })
           .then(function (ratingData) {
             if (ratingData) renderAdminRatings(ratingData);
+          });
+      }
+
+      function loadChatReports() {
+        fetch("/api/admin/chat-reports", { credentials: "same-origin" })
+          .then(function (r) {
+            if (r.status === 401 || r.status === 403) return null;
+            return r.json();
+          })
+          .then(function (data) {
+            var ul = document.getElementById("chat-report-list");
+            if (!ul) return;
+            ul.innerHTML = "";
+            if (!data || !data.reports || !data.reports.length) {
+              var li0 = document.createElement("li");
+              li0.textContent = "Keine offenen Meldungen.";
+              li0.className = "muted";
+              ul.appendChild(li0);
+              return;
+            }
+            data.reports.forEach(function (rpt) {
+              var li = document.createElement("li");
+              var text = document.createElement("span");
+              text.textContent =
+                rpt.subject_label +
+                " — " +
+                rpt.reported_username +
+                ': "' +
+                rpt.body +
+                '" gemeldet von ' +
+                rpt.reporter_username +
+                (rpt.reason ? " — Grund: " + rpt.reason : "") +
+                " — " +
+                rpt.created_at;
+              li.appendChild(text);
+              var done = document.createElement("button");
+              done.type = "button";
+              done.className = "btn btn-small btn-secondary";
+              done.style.marginLeft = "0.75rem";
+              done.textContent = "Erledigt";
+              done.addEventListener("click", function () {
+                fetch("/api/admin/chat-reports/" + rpt.id + "/resolve", {
+                  method: "POST",
+                  credentials: "same-origin",
+                })
+                  .then(function (r) {
+                    return r.json().then(function (d) {
+                      return { ok: r.ok, d: d };
+                    });
+                  })
+                  .then(function (x) {
+                    if (!x.ok) {
+                      window.alert("Meldung konnte nicht erledigt werden.");
+                      return;
+                    }
+                    loadChats();
+                  });
+              });
+              li.appendChild(done);
+              ul.appendChild(li);
+            });
           });
       }
 

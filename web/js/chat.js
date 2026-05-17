@@ -118,7 +118,10 @@
       if (room.appointment) {
         var app = document.createElement("p");
         app.className = "room-appointment";
-        app.textContent = "Termin: " + room.appointment;
+        app.textContent =
+          "Termin: " +
+          room.appointment +
+          (room.location ? " · Ort: " + room.location : "");
         card.appendChild(app);
       }
 
@@ -191,6 +194,15 @@
       body.textContent = m.body;
       wrap.appendChild(head);
       wrap.appendChild(body);
+      if (m.user_id !== window.__uid) {
+        var reportBtn = document.createElement("button");
+        reportBtn.className = "btn btn-ghost btn-small";
+        reportBtn.textContent = "Melden";
+        reportBtn.onclick = function () {
+          reportMessage(m.id);
+        };
+        wrap.appendChild(reportBtn);
+      }
       if (userRole === "teacher" || userRole === "admin" || userRole === "dev") {
         var deleteBtn = document.createElement("button");
         deleteBtn.className = "btn btn-ghost btn-small";
@@ -218,6 +230,11 @@
         } else {
           setLobbyError("Du warst nicht mehr im Raum. Bitte erneut beitreten.");
         }
+        return;
+      }
+      if (res.data && res.data.error === "appointment_ended") {
+        clearMessagesUi();
+        loadAppointment();
         return;
       }
       if (!res.ok || !res.data.messages) {
@@ -280,6 +297,7 @@
     lastAppointmentUiKey = null;
     currentSubject = null;
     sinceId = 0;
+    clearMessagesUi();
     $("chat-panel").classList.add("hidden");
     $("lobby").classList.remove("hidden");
     if (!silent) setLobbyError("");
@@ -308,16 +326,44 @@
       body: { subject: currentSubject, body: body },
     }).then(function (res) {
       if (!res.ok) {
-        input.value = body;
+        if (!(res.data && res.data.error === "appointment_ended")) {
+          input.value = body;
+        }
         if (res.status === 403 && res.data && res.data.error === "need_pro") {
           leaveRoomUi(true);
           setLobbyError(
             "Es ist kein Pro mehr im Raum. Der Chat ist für dich vorerst beendet — bitte erneut beitreten, wenn ein Pro da ist."
           );
+        } else if (res.data && res.data.error === "appointment_ended") {
+          clearMessagesUi();
+          loadAppointment();
+          setLobbyError("Der Termin ist beendet. Der Chat wurde geleert.");
         }
         return;
       }
       fetchMessages();
+    });
+  }
+
+  function reportMessage(id) {
+    var reason = window.prompt("Warum möchtest du diese Nachricht melden? (optional)", "");
+    if (reason === null) return;
+    reason = (reason || "").trim();
+    if (reason.length > 300) {
+      setLobbyError("Der Meldegrund darf höchstens 300 Zeichen lang sein.");
+      return;
+    }
+    api("/api/chat/report-message", {
+      method: "POST",
+      body: { message_id: id, reason: reason },
+    }).then(function (res) {
+      if (res.ok) {
+        setLobbyError("Nachricht wurde gemeldet.");
+      } else if (res.data && res.data.error === "already_reported") {
+        setLobbyError("Du hast diese Nachricht schon gemeldet.");
+      } else {
+        setLobbyError("Melden fehlgeschlagen.");
+      }
     });
   }
 
@@ -349,6 +395,7 @@
     }
     return JSON.stringify({
       appointment: data && data.appointment ? data.appointment : null,
+      location: data && data.location ? data.location : null,
       started: !!(data && data.started),
       ended: !!(data && data.ended),
       yr: yr,
@@ -376,11 +423,18 @@
   function updateAppointmentUi(data) {
     var container = $("chat-appointment");
     if (!container) return;
+    if (data && data.ended) {
+      clearMessagesUi();
+    }
     var content = "";
     if (data && data.appointment) {
       content +=
         '<p class="chat-appointment-text"><strong>Termin:</strong> ' +
         esc(data.appointment) +
+        "</p>";
+      content +=
+        '<p class="chat-appointment-text"><strong>Ort:</strong> ' +
+        esc(data.location || "") +
         "</p>";
     } else {
       content += '<p class="chat-appointment-text">Kein Termin gesetzt.</p>';
@@ -540,13 +594,26 @@
       setLobbyError("Termin darf nicht leer sein.");
       return;
     }
+    var location = prompt("Gib den Ort ein:", "");
+    if (location === null) return;
+    location = (location || "").trim();
+    if (!location) {
+      setLobbyError("Ort darf nicht leer sein.");
+      return;
+    }
     api("/api/chat/appointment", {
       method: "POST",
-      body: { subject: currentSubject, appointment: appointment },
+      body: { subject: currentSubject, appointment: appointment, location: location },
     }).then(function (res) {
       if (!res.ok) {
         if (res.data && res.data.error === "invalid_datetime") {
           setLobbyError("Ungueltiges Datum. Bitte Format YYYY-MM-DD HH:MM verwenden.");
+        } else if (
+          res.data &&
+          (res.data.error === "empty_location" ||
+            res.data.error === "invalid_location")
+        ) {
+          setLobbyError("Bitte einen Ort eingeben.");
         } else {
           setLobbyError("Termin speichern fehlgeschlagen.");
         }
@@ -554,6 +621,12 @@
       }
       loadAppointment();
     });
+  }
+
+  function clearMessagesUi() {
+    sinceId = 0;
+    var box = $("chat-messages");
+    if (box) box.innerHTML = "";
   }
 
   function endAppointment() {
@@ -566,6 +639,7 @@
         setLobbyError("Termin beenden fehlgeschlagen.");
         return;
       }
+      clearMessagesUi();
       loadAppointment();
     });
   }
