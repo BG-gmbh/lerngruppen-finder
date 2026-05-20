@@ -208,8 +208,6 @@ def init_db():
 
     with closing(sqlite3.connect(DATABASE)) as db:
         db.row_factory = sqlite3.Row
-        invite_role = inv["role"] if inv["role"] in ROLES else "user"
-        invite_class = class_name_for_role(invite_role, inv["class_name"]) or ""
         db.execute(
             """
             CREATE TABLE IF NOT EXISTS users (

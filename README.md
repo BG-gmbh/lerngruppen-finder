@@ -15,6 +15,8 @@ Die Seiten kannst du im Editor bearbeiten wie jede andere Website. **Nicht** nur
 
 Einmalig installieren:
 
+Linux / macOS:
+
 ```bash
 cd /Users/admin/benjamin/lerngruppen-finder
 python3 -m venv venv
@@ -23,13 +25,38 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
+Windows PowerShell:
+
+```powershell
+cd C:\Users\admin\benjamin\lerngruppen-finder
+py -3 -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+Copy-Item .env.example .env
+```
+
 Danach starten:
+
+Linux / macOS:
 
 ```bash
 cd /Users/admin/benjamin/lerngruppen-finder
 source venv/bin/activate
 python app.py
 ```
+
+Windows PowerShell:
+
+```powershell
+cd C:\Users\admin\benjamin\lerngruppen-finder
+.\venv\Scripts\Activate.ps1
+python app.py
+```
+
+Alternativ vom Projektstamm aus:
+
+- Linux / macOS: `./run-backend.sh`
+- Windows PowerShell: `.\run-backend.ps1`
 
 Öffnen:
 
@@ -48,13 +75,25 @@ python app.py
 
 Dann Flutter Web starten:
 
+Linux / macOS:
+
 ```bash
 cd /Users/admin/benjamin/lerngruppen-finder/flutter_app
 flutter pub get
 flutter run -d chrome --dart-define=API_BASE_URL=http://127.0.0.1:5000
 ```
 
+Windows PowerShell:
+
+```powershell
+cd C:\Users\admin\benjamin\lerngruppen-finder\flutter_app
+flutter pub get
+flutter run -d chrome --dart-define=API_BASE_URL=http://127.0.0.1:5000
+```
+
 Android-Emulator:
+
+Linux / macOS:
 
 ```bash
 cd /Users/admin/benjamin/lerngruppen-finder/flutter_app
@@ -62,13 +101,36 @@ flutter pub get
 flutter run --dart-define=API_BASE_URL=http://10.0.2.2:5000
 ```
 
+Windows PowerShell:
+
+```powershell
+cd C:\Users\admin\benjamin\lerngruppen-finder\flutter_app
+flutter pub get
+flutter run --dart-define=API_BASE_URL=http://10.0.2.2:5000
+```
+
 Echtes Handy im gleichen WLAN:
+
+Linux / macOS:
 
 ```bash
 cd /Users/admin/benjamin/lerngruppen-finder/flutter_app
 flutter pub get
 flutter run --dart-define=API_BASE_URL=http://<SERVER-IP>:5000
 ```
+
+Windows PowerShell:
+
+```powershell
+cd C:\Users\admin\benjamin\lerngruppen-finder\flutter_app
+flutter pub get
+flutter run --dart-define=API_BASE_URL=http://<SERVER-IP>:5000
+```
+
+Alternativ vom Projektstamm aus:
+
+- Linux / macOS: `./run-flutter.sh`
+- Windows PowerShell: `.\run-flutter.ps1`
 
 Native Plattformordner ergänzen, falls Flutter sie braucht:
 
