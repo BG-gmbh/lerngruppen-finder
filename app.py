@@ -272,6 +272,10 @@ def _ensure_user_teacher_email_prefs(db):
         db.execute(
             "ALTER TABLE users ADD COLUMN notify_laden_email INTEGER NOT NULL DEFAULT 0"
         )
+    if "avatar_url" not in names:
+        db.execute("ALTER TABLE users ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''")
+    if "iserv_email" not in names:
+        db.execute("ALTER TABLE users ADD COLUMN iserv_email TEXT NOT NULL DEFAULT ''")
     db.execute("UPDATE users SET class_name = lower(replace(trim(class_name), ' ', ''))")
     db.execute("UPDATE users SET class_name = '' WHERE role IN ('admin', 'dev')")
     db.commit()
@@ -2887,7 +2891,8 @@ def _public_user_payload(db, user_id):
                pro_verified_german, pro_verified_math, pro_verified_english,
                pro_verified_biology, pro_verified_pgw, pro_verified_spanish,
                pro_verified_art,
-               contact_email, notify_laden_email
+               contact_email, notify_laden_email,
+               avatar_url, iserv_email
         FROM users WHERE id = ?
         """,
         (user_id,),
@@ -2917,6 +2922,8 @@ def _public_user_payload(db, user_id):
         "pro_verified_art": bool(row["pro_verified_art"]),
         "contact_email": row["contact_email"] or "",
         "notify_laden_email": bool(row["notify_laden_email"]),
+        "avatar_url": row["avatar_url"] or "",
+        "iserv_email": row["iserv_email"] or "",
         "school_logo_url": school_logo_url_for(db, row["school"] or ""),
     }
 
@@ -2971,6 +2978,17 @@ def _valid_contact_email(raw):
     if not s:
         return None
     if len(s) > 254 or "@" not in s or " " in s:
+        return None
+    return s
+
+
+def _valid_optional_url(raw, max_len=1000):
+    s = (raw or "").strip()
+    if not s:
+        return ""
+    if len(s) > max_len:
+        return None
+    if not (s.startswith("http://") or s.startswith("https://")):
         return None
     return s
 
@@ -3080,6 +3098,13 @@ def api_profile_update():
     if want_notify and not contact_email:
         return jsonify(error="notify_no_email"), 400
     notify_val = 1 if (want_notify and contact_email) else 0
+    avatar_url = _valid_optional_url(data.get("avatar_url"), 1000)
+    if avatar_url is None:
+        return jsonify(error="invalid_avatar_url"), 400
+    raw_iserv = (data.get("iserv_email") or "").strip()
+    iserv_email = _valid_contact_email(raw_iserv)
+    if raw_iserv and iserv_email is None:
+        return jsonify(error="bad_iserv_email"), 400
 
     cur_pwd = data.get("current_password") or ""
     new_pwd = data.get("new_password") or ""
@@ -3121,7 +3146,8 @@ def api_profile_update():
                 pro_verified_german = ?, pro_verified_math = ?, pro_verified_english = ?,
                 pro_verified_biology = ?, pro_verified_pgw = ?, pro_verified_spanish = ?,
                 pro_verified_art = ?,
-                contact_email = ?, notify_laden_email = ?, password_hash = ?
+                contact_email = ?, notify_laden_email = ?,
+                avatar_url = ?, iserv_email = ?, password_hash = ?
             WHERE id = ?
             """,
             (
@@ -3141,6 +3167,8 @@ def api_profile_update():
                 va,
                 contact_email,
                 notify_val,
+                avatar_url,
+                iserv_email or "",
                 generate_password_hash(new_pwd),
                 uid,
             ),
@@ -3153,13 +3181,14 @@ def api_profile_update():
                 pro_verified_german = ?, pro_verified_math = ?, pro_verified_english = ?,
                 pro_verified_biology = ?, pro_verified_pgw = ?, pro_verified_spanish = ?,
                 pro_verified_art = ?,
-                contact_email = ?, notify_laden_email = ?
+                contact_email = ?, notify_laden_email = ?,
+                avatar_url = ?, iserv_email = ?
             WHERE id = ?
             """,
             (
                 lg, lm, le, lb, lp, ls, la,
                 vg, vm, ve, vb, vp, vs, va,
-                contact_email, notify_val, uid,
+                contact_email, notify_val, avatar_url, iserv_email or "", uid,
             ),
         )
     db.commit()

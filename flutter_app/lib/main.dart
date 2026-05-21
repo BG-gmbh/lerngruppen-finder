@@ -161,6 +161,8 @@ class UserProfile {
     required this.proVerifiedArt,
     required this.contactEmail,
     required this.notifyLadenEmail,
+    required this.avatarUrl,
+    required this.iservEmail,
     required this.schoolLogoUrl,
   });
 
@@ -187,6 +189,8 @@ class UserProfile {
       proVerifiedArt: json['pro_verified_art'] == true,
       contactEmail: json['contact_email']?.toString() ?? '',
       notifyLadenEmail: json['notify_laden_email'] == true,
+      avatarUrl: json['avatar_url']?.toString() ?? '',
+      iservEmail: json['iserv_email']?.toString() ?? '',
       schoolLogoUrl: json['school_logo_url']?.toString() ?? '',
     );
   }
@@ -212,6 +216,8 @@ class UserProfile {
   final bool proVerifiedArt;
   final String contactEmail;
   final bool notifyLadenEmail;
+  final String avatarUrl;
+  final String iservEmail;
   final String schoolLogoUrl;
 
   String levelFor(String subject) {
@@ -285,6 +291,10 @@ const _baseText = {
   'shop': 'Laden',
   'profile': 'Profil',
   'admin': 'Admin',
+  'learn': 'Lernen',
+  'tips': 'Tipps',
+  'motivation': 'Motivation',
+  'learn_places': 'Lernorte',
   'login': 'Login',
   'invite_register': 'Mit Code registrieren',
   'setup_admin': 'Admin festlegen',
@@ -331,6 +341,10 @@ const _baseText = {
   'chat_text': 'Noob und Mittel können schreiben, sobald ein Pro im Fachraum ist.',
   'admin_text': 'Nutzer, Einladungscodes, Chats, Bewertungen und Laden verwalten.',
   'email': 'E-Mail-Adresse',
+  'avatar': 'Avatar',
+  'avatar_url': 'Avatar-Bild-URL',
+  'iserv_connect': 'Mit IServ verbinden',
+  'iserv_email': 'IServ-E-Mail',
   'notify_shop': 'Bei Laden-Käufen per E-Mail informieren',
   'change_password': 'Passwort ändern',
   'current_password': 'Aktuelles Passwort',
@@ -462,6 +476,16 @@ const _baseText = {
   'stars3': '3 Sterne',
   'stars2': '2 Sterne',
   'stars1': '1 Stern',
+  'chat_title': 'Chat-Titel',
+  'group_duration': 'Lerngruppen bleiben bis zum Termin-Ende aktiv.',
+  'learn_tip_1': 'Ziel fuer die naechsten 25 Minuten festlegen.',
+  'learn_tip_2': 'Eine Frage vorbereiten, bevor du den Chat betrittst.',
+  'learn_tip_3': 'Nach jedem Termin drei Stichpunkte sichern.',
+  'motivation_1': 'Kleine Schritte zaehlen, wenn du sie regelmaessig machst.',
+  'motivation_2': 'Erklaeren zeigt schnell, was du schon kannst.',
+  'learn_place_1': 'Bibliothek',
+  'learn_place_2': 'Freier Klassenraum',
+  'learn_place_3': 'Ruhige Ecke in der Schule',
   'need_comment_local': 'Bei weniger als 4 Sternen ist ein Kommentar nötig.',
   'chat_ended_local': 'Der Termin ist beendet. Der Chat wurde geleert.',
   'all_password_fields': 'Bitte alle Passwortfelder ausfüllen.',
@@ -482,6 +506,8 @@ const _baseText = {
   'login_invalid': 'Login-Daten stimmen nicht.',
   'bad_invite': 'Einladungscode ist ungültig.',
   'bad_contact_email': 'E-Mail-Adresse ist ungültig.',
+  'bad_iserv_email': 'IServ-E-Mail ist ungültig.',
+  'invalid_avatar_url': 'Avatar-URL ist ungültig.',
   'notify_no_email': 'Bitte erst eine E-Mail-Adresse eintragen.',
   'invalid_school': 'Schulname ist zu lang.',
   'invalid_logo_url': 'Logo-URL ist ungültig.',
@@ -514,6 +540,10 @@ const _localizedText = {
     'logout': 'Log out',
     'shop': 'Store',
     'profile': 'Profile',
+    'learn': 'Learn',
+    'tips': 'Tips',
+    'motivation': 'Motivation',
+    'learn_places': 'Study places',
     'invite_register': 'Register with code',
     'setup_admin': 'Set admin',
     'create_account': 'Create account',
@@ -554,12 +584,26 @@ const _localizedText = {
     'chat_text': 'Noob and medium users can write once a pro is in the room.',
     'admin_text': 'Manage users, invite codes, chats, ratings, and store.',
     'email': 'Email address',
+    'avatar': 'Avatar',
+    'avatar_url': 'Avatar image URL',
+    'iserv_connect': 'Connect IServ',
+    'iserv_email': 'IServ email',
     'notify_shop': 'Notify me by email for store purchases',
     'change_password': 'Change password',
     'current_password': 'Current password',
     'new_password': 'New password',
     'confirm_new_password': 'Confirm new password',
     'saved': 'Saved',
+    'chat_title': 'Chat title',
+    'group_duration': 'Study groups stay active until the appointment ends.',
+    'learn_tip_1': 'Set one target for the next 25 minutes.',
+    'learn_tip_2': 'Prepare one question before joining a chat.',
+    'learn_tip_3': 'Save three notes after every appointment.',
+    'motivation_1': 'Small steps count when you repeat them.',
+    'motivation_2': 'Explaining shows what you already understand.',
+    'learn_place_1': 'Library',
+    'learn_place_2': 'Free classroom',
+    'learn_place_3': 'Quiet place at school',
   },
   'fr': {
     'language': 'Langue',
@@ -887,10 +931,11 @@ class _AppShellState extends State<AppShell> {
         user: user!,
         onOpenChat: () => setState(() => tab = 1),
         onOpenShop: () => setState(() => tab = 2),
-        onOpenAdmin: isAdmin ? () => setState(() => tab = 4) : null,
+        onOpenAdmin: isAdmin ? () => setState(() => tab = 5) : null,
       ),
       ChatScreen(api: api, user: user!),
       ShopScreen(api: api),
+      const LearnScreen(),
       SettingsScreen(api: api, user: user!, onSaved: _refreshMe),
       if (isAdmin)
         AdminScreen(
@@ -910,6 +955,7 @@ class _AppShellState extends State<AppShell> {
         title: const Text('lerngruppen finder'),
         actions: [
           const LanguageMenuButton(),
+          UserAvatar(user: user!, radius: 22),
           if (user!.schoolLogoUrl.isNotEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
@@ -951,6 +997,11 @@ class _AppShellState extends State<AppShell> {
             icon: const Icon(Icons.storefront_outlined),
             selectedIcon: const Icon(Icons.storefront),
             label: tx(context, 'shop'),
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.lightbulb_outline),
+            selectedIcon: const Icon(Icons.lightbulb),
+            label: tx(context, 'learn'),
           ),
           NavigationDestination(
             icon: const Icon(Icons.settings_outlined),
@@ -1207,8 +1258,12 @@ class DashboardScreen extends StatelessWidget {
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Text('${tx(context, 'hello')}, ${user.username}',
-                style: Theme.of(context).textTheme.headlineSmall),
+            UserAvatar(user: user, radius: 28),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text('${tx(context, 'hello')}, ${displayName(user.username)}',
+                  style: Theme.of(context).textTheme.headlineSmall),
+            ),
             if (user.isStaff) ...[
               const SizedBox(width: 8),
               Icon(user.roleIcon,
@@ -1256,6 +1311,38 @@ class DashboardScreen extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+String displayName(String value) {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty) return '';
+  return trimmed[0].toUpperCase() + trimmed.substring(1);
+}
+
+class UserAvatar extends StatelessWidget {
+  const UserAvatar({required this.user, this.radius = 20, super.key});
+
+  final UserProfile user;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final initials = displayName(user.username).isEmpty
+        ? '?'
+        : displayName(user.username)[0];
+    if (user.avatarUrl.isNotEmpty) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundImage: NetworkImage(user.avatarUrl),
+        onBackgroundImageError: (_, __) {},
+        child: const SizedBox.shrink(),
+      );
+    }
+    return CircleAvatar(
+      radius: radius,
+      child: Text(initials),
     );
   }
 }
@@ -1396,12 +1483,17 @@ class _ChatScreenState extends State<ChatScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(room['label'].toString(),
+              Text('${tx(context, 'chat_title')}: ${room['label']}',
                   style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 6),
               Text(
                 '${room['count_non_pro']} / ${room['max']} ohne Pro, '
                 '${room['count_pro']} Pro online',
+              ),
+              const SizedBox(height: 4),
+              Text(
+                tx(context, 'group_duration'),
+                style: Theme.of(context).textTheme.bodySmall,
               ),
               if (appointmentText.isNotEmpty) ...[
                 const SizedBox(height: 6),
@@ -1443,7 +1535,7 @@ class _ChatScreenState extends State<ChatScreen> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          '${member['username']} (${levelLabel(member['level'])})',
+          '${displayName(member['username']?.toString() ?? '')} (${levelLabel(member['level'])})',
           style: Theme.of(context).textTheme.bodyMedium,
         ),
         if (verified) ...[
@@ -1469,7 +1561,7 @@ class _ChatScreenState extends State<ChatScreen> {
               onPressed: _leave,
               icon: const Icon(Icons.arrow_back),
             ),
-            title: Text(subjectLabel ?? 'Chat'),
+            title: Text('${tx(context, 'chat_title')}: ${subjectLabel ?? 'Chat'}'),
             subtitle: error == null ? null : Text(error!),
           ),
         ),
@@ -1500,7 +1592,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              '${msg['username']} · ${msg['created_at']}',
+                              '${displayName(msg['username']?.toString() ?? '')} · ${msg['created_at']}',
                               style: Theme.of(context).textTheme.labelSmall,
                             ),
                             if (senderIcon != null) ...[
@@ -1581,7 +1673,9 @@ class _ChatScreenState extends State<ChatScreen> {
     final yourRating = data?['your_rating'] as Map<String, dynamic>?;
     final isPro = widget.user.levelFor(active) == 'pro';
     final ratingAvg = data?['rating_avg'];
-    final ratingAvgText = ratingAvg != null ? ' · Avg $ratingAvg' : '';
+    final ratingAvgNum = ratingAvg is num ? ratingAvg : null;
+    final ratingAvgText =
+        ratingAvgNum != null ? ' · Avg ${ratingAvgNum.toStringAsFixed(1)}' : '';
     return Material(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       child: Padding(
@@ -1619,9 +1713,17 @@ class _ChatScreenState extends State<ChatScreen> {
             ],
             if (isPro && data?['rating_count'] != null) ...[
               const SizedBox(height: 6),
-              Text(
-                '${tx(context, 'ratings')}: ${data?['rating_count']}$ratingAvgText',
-                style: Theme.of(context).textTheme.bodySmall,
+              Row(
+                children: [
+                  Text(
+                    '${tx(context, 'ratings')}: ${data?['rating_count']}$ratingAvgText',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  if (ratingAvgNum != null) ...[
+                    const SizedBox(width: 8),
+                    StarRatingDisplay(value: ratingAvgNum.round()),
+                  ],
+                ],
               ),
             ],
             const SizedBox(height: 8),
@@ -1973,19 +2075,9 @@ class _ChatScreenState extends State<ChatScreen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              DropdownButtonFormField<int>(
+              StarRatingInput(
                 value: rating,
-                decoration: InputDecoration(labelText: tx(context, 'rating')),
-                items: [
-                  DropdownMenuItem(value: 5, child: Text(tx(context, 'stars5'))),
-                  DropdownMenuItem(value: 4, child: Text(tx(context, 'stars4'))),
-                  DropdownMenuItem(value: 3, child: Text(tx(context, 'stars3'))),
-                  DropdownMenuItem(value: 2, child: Text(tx(context, 'stars2'))),
-                  DropdownMenuItem(value: 1, child: Text(tx(context, 'stars1'))),
-                ],
-                onChanged: (value) {
-                  if (value != null) setDialogState(() => rating = value);
-                },
+                onChanged: (value) => setDialogState(() => rating = value),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -2023,7 +2115,135 @@ class RatingEdit {
   final String comment;
 }
 
+class StarRatingInput extends StatelessWidget {
+  const StarRatingInput({
+    required this.value,
+    required this.onChanged,
+    super.key,
+  });
+
+  final int value;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        for (var i = 1; i <= 5; i++)
+          IconButton(
+            tooltip: '$i ${tx(context, 'stars')}',
+            onPressed: () => onChanged(i),
+            icon: Icon(i <= value ? Icons.star : Icons.star_border),
+            color: Theme.of(context).colorScheme.primary,
+          ),
+      ],
+    );
+  }
+}
+
+class StarRatingDisplay extends StatelessWidget {
+  const StarRatingDisplay({required this.value, super.key});
+
+  final int value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 1; i <= 5; i++)
+          Icon(
+            i <= value ? Icons.star : Icons.star_border,
+            size: 16,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+      ],
+    );
+  }
+}
+
 String _two(int value) => value.toString().padLeft(2, '0');
+
+class LearnScreen extends StatelessWidget {
+  const LearnScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 3,
+      child: Column(
+        children: [
+          Material(
+            color: Theme.of(context).colorScheme.surface,
+            child: TabBar(
+              tabs: [
+                Tab(icon: const Icon(Icons.tips_and_updates), text: tx(context, 'tips')),
+                Tab(icon: const Icon(Icons.bolt), text: tx(context, 'motivation')),
+                Tab(icon: const Icon(Icons.place), text: tx(context, 'learn_places')),
+              ],
+            ),
+          ),
+          Expanded(
+            child: TabBarView(
+              children: [
+                _LearningList(
+                  icon: Icons.check_circle_outline,
+                  items: [
+                    tx(context, 'learn_tip_1'),
+                    tx(context, 'learn_tip_2'),
+                    tx(context, 'learn_tip_3'),
+                  ],
+                ),
+                _LearningList(
+                  icon: Icons.star_outline,
+                  items: [
+                    tx(context, 'motivation_1'),
+                    tx(context, 'motivation_2'),
+                  ],
+                ),
+                _LearningList(
+                  icon: Icons.location_on_outlined,
+                  items: [
+                    tx(context, 'learn_place_1'),
+                    tx(context, 'learn_place_2'),
+                    tx(context, 'learn_place_3'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LearningList extends StatelessWidget {
+  const _LearningList({required this.icon, required this.items});
+
+  final IconData icon;
+  final List<String> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        for (final item in items)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Card(
+              child: ListTile(
+                leading: Icon(icon),
+                title: Text(item),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
 
 class ShopScreen extends StatefulWidget {
   const ShopScreen({required this.api, super.key});
@@ -2135,6 +2355,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late String spanish;
   late String art;
   late final TextEditingController email;
+  late final TextEditingController avatarUrl;
+  late final TextEditingController iservEmail;
   late final TextEditingController currentPassword;
   late final TextEditingController newPassword;
   late final TextEditingController newPasswordConfirm;
@@ -2153,6 +2375,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     spanish = widget.user.levelSpanish;
     art = widget.user.levelArt;
     email = TextEditingController(text: widget.user.contactEmail);
+    avatarUrl = TextEditingController(text: widget.user.avatarUrl);
+    iservEmail = TextEditingController(text: widget.user.iservEmail);
     currentPassword = TextEditingController();
     newPassword = TextEditingController();
     newPasswordConfirm = TextEditingController();
@@ -2162,6 +2386,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void dispose() {
     email.dispose();
+    avatarUrl.dispose();
+    iservEmail.dispose();
     currentPassword.dispose();
     newPassword.dispose();
     newPasswordConfirm.dispose();
@@ -2174,6 +2400,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
       padding: const EdgeInsets.all(16),
       children: [
         Text(tx(context, 'profile'), style: Theme.of(context).textTheme.headlineSmall),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            UserAvatar(user: widget.user, radius: 32),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                displayName(widget.user.username),
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Text(tx(context, 'avatar'),
+            style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 12),
+        TextField(
+          controller: avatarUrl,
+          keyboardType: TextInputType.url,
+          decoration: InputDecoration(labelText: tx(context, 'avatar_url')),
+        ),
+        const SizedBox(height: 12),
+        Text(tx(context, 'iserv_connect'),
+            style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 12),
+        TextField(
+          controller: iservEmail,
+          keyboardType: TextInputType.emailAddress,
+          decoration: InputDecoration(labelText: tx(context, 'iserv_email')),
+        ),
         const SizedBox(height: 16),
         LevelSelector(
           label: tx(context, 'german'),
@@ -2299,6 +2556,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         'level_art': art,
         'contact_email': email.text.trim(),
         'notify_laden_email': notify,
+        'avatar_url': avatarUrl.text.trim(),
+        'iserv_email': iservEmail.text.trim(),
         if (wantsPasswordChange) ...{
           'current_password': currentPasswordText,
           'new_password': newPasswordText,
@@ -4164,7 +4423,9 @@ String friendlyError(BuildContext context, Object ex) {
       'invalid' => tx(context, 'login_invalid'),
       'bad_invite' => tx(context, 'bad_invite'),
       'bad_contact_email' => tx(context, 'bad_contact_email'),
+      'bad_iserv_email' => tx(context, 'bad_iserv_email'),
       'notify_no_email' => tx(context, 'notify_no_email'),
+      'invalid_avatar_url' => tx(context, 'invalid_avatar_url'),
       'invalid_school' => tx(context, 'invalid_school'),
       'invalid_logo_url' => tx(context, 'invalid_logo_url'),
       'invalid_role' => tx(context, 'invalid_role'),
