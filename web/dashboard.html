@@ -32,7 +32,10 @@
   <main class="container container-wide">
     <ul id="flash-banner"></ul>
     <section class="card">
-      <h1>Hallo, <span id="welcome-name">…</span></h1>
+      <div class="profile-head">
+        <div class="avatar-preview avatar-small" id="dashboard-avatar" aria-hidden="true">LF</div>
+        <h1>Hallo, <span id="welcome-name">…</span></h1>
+      </div>
       <p id="class-summary" class="level-summary muted"></p>
       <p id="level-summary" class="level-summary muted"></p>
       <p class="muted" style="margin-top:1rem;">
@@ -45,6 +48,26 @@
         Fächer änderst du unter
         <a href="/settings.html">Einstellungen</a>.
       </p>
+    </section>
+
+    <section class="card" style="margin-top:1rem;">
+      <h2 class="card-title">Lernorte</h2>
+      <form id="place-form" class="stack-form" autocomplete="off">
+        <label>
+          Name
+          <input id="place-name" type="text" maxlength="120" required placeholder="z. B. Bibliothek, Aula, Raum 204">
+        </label>
+        <label>
+          Adresse / Raum
+          <input id="place-address" type="text" maxlength="200" placeholder="z. B. 2. Stock oder Musterstraße 1">
+        </label>
+        <label>
+          Notiz
+          <textarea id="place-note" maxlength="500" rows="3" placeholder="Was ist dort gut zum Lernen?"></textarea>
+        </label>
+        <button type="submit" class="btn btn-block">Lernort hinzufügen</button>
+      </form>
+      <ul id="place-list" class="code-list place-list"></ul>
     </section>
   </main>
   <script src="/js/flash.js"></script>
@@ -71,7 +94,80 @@
         "Spanisch: " + labelLevel(data.level_spanish),
         "Kunst: " + labelLevel(data.level_art),
       ].join(" · ");
+      var avatar = document.getElementById("dashboard-avatar");
+      if (avatar) {
+        if (data.avatar_url) {
+          avatar.style.backgroundImage = "url('" + data.avatar_url + "')";
+          avatar.textContent = "";
+        } else {
+          avatar.textContent = (data.username || "LF").slice(0, 2).toUpperCase();
+        }
+      }
     }
+
+    function esc(s) {
+      var d = document.createElement("div");
+      d.textContent = s == null ? "" : s;
+      return d.innerHTML;
+    }
+
+    function renderPlaces(data) {
+      var list = document.getElementById("place-list");
+      if (!list) return;
+      list.innerHTML = "";
+      if (!data || !data.places || !data.places.length) {
+        var empty = document.createElement("li");
+        empty.className = "muted";
+        empty.textContent = "Noch keine Lernorte eingetragen.";
+        list.appendChild(empty);
+        return;
+      }
+      data.places.forEach(function (p) {
+        var li = document.createElement("li");
+        li.innerHTML =
+          "<strong>" + esc(p.name) + "</strong>" +
+          (p.address ? " <span class=\"muted\">— " + esc(p.address) + "</span>" : "") +
+          (p.note ? "<br><span class=\"muted\">" + esc(p.note).replace(/\n/g, "<br>") + "</span>" : "") +
+          "<br><span class=\"muted\">Eingetragen von " + esc(p.username) + (p.school ? " · " + esc(p.school) : "") + "</span>";
+        list.appendChild(li);
+      });
+    }
+
+    function loadPlaces() {
+      fetch("/api/learning-places", { credentials: "same-origin" })
+        .then(function (r) {
+          if (!r.ok) return null;
+          return r.json();
+        })
+        .then(renderPlaces);
+    }
+
+    document.getElementById("place-form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      fetch("/api/learning-places", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: document.getElementById("place-name").value,
+          address: document.getElementById("place-address").value,
+          note: document.getElementById("place-note").value,
+        }),
+      })
+        .then(function (r) {
+          return r.json().then(function (d) {
+            return { ok: r.ok, d: d };
+          });
+        })
+        .then(function (result) {
+          if (!result.ok) {
+            window.alert("Lernort konnte nicht gespeichert werden.");
+            return;
+          }
+          document.getElementById("place-form").reset();
+          loadPlaces();
+        });
+    });
 
     fetch("/api/me", { credentials: "same-origin" })
       .then(function (r) {
@@ -91,6 +187,7 @@
           if (adm) adm.classList.remove("hidden");
         }
         setSummary(data);
+        loadPlaces();
       });
   </script>
 </body>

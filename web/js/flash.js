@@ -13,6 +13,8 @@
     needlogin: "Bitte zuerst einloggen.",
     levels: "Bitte für jedes Fach Pro, Mittel oder Noob wählen.",
     invalid_class: "Bitte eine gültige Klasse eintragen (maximal 20 Zeichen).",
+    invalid_school: "Bitte einen gültigen Lehrort eintragen (maximal 120 Zeichen).",
+    bad_avatar: "Bitte ein gültiges Avatar-Bild hochladen (PNG, JPG, GIF oder WebP bis 2 MB).",
     saved: "Einstellungen gespeichert.",
     register_disabled: "Öffentliche Registrierung ist ausgeschaltet. Bitte Administrator oder Einladungscode.",
     admin_only: "Nur für Lehrer und Administratoren.",

@@ -9,6 +9,7 @@ from urllib.parse import urlencode
 
 from dotenv import load_dotenv
 from flask import Flask, g, jsonify, redirect, request, send_from_directory, session
+from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from mailer import send_smtp_mail, smtp_status
@@ -36,6 +37,9 @@ CHAT_VERIFIED_COLUMN = {
 }
 CHAT_MAX_USERS = 5
 CHAT_BODY_MAX = 500
+AVATAR_UPLOAD_DIR = Path(__file__).resolve().parent / "web" / "uploads" / "avatars"
+AVATAR_ALLOWED_EXTENSIONS = frozenset({"png", "jpg", "jpeg", "gif", "webp"})
+AVATAR_MAX_BYTES = 2 * 1024 * 1024
 app = Flask(__name__, static_folder="web", static_url_path="")
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-nur-lokal-bitte-aendern")
 
@@ -77,6 +81,13 @@ def _normalize_appointment_location(raw):
     text = (raw or "").strip()
     if not text:
         return None
+    if len(text) > 120:
+        return None
+    return text
+
+
+def _normalize_school_name(raw):
+    text = " ".join((raw or "").strip().split())
     if len(text) > 120:
         return None
     return text
@@ -225,6 +236,7 @@ def init_db():
         _ensure_user_teacher_email_prefs(db)
         _ensure_schools(db)
         _ensure_chat_tables(db)
+        _ensure_learning_places(db)
         _ensure_invite_codes(db)
         _ensure_app_settings(db)
         _ensure_api_tokens(db)
@@ -304,6 +316,30 @@ def _ensure_schools(db):
                     "INSERT OR IGNORE INTO schools (name) VALUES (?)",
                     (school,),
                 )
+    db.commit()
+
+
+def _ensure_learning_places(db):
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS learning_places (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            username TEXT NOT NULL,
+            school TEXT NOT NULL DEFAULT '',
+            name TEXT NOT NULL,
+            address TEXT NOT NULL DEFAULT '',
+            note TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_learning_places_school_created
+        ON learning_places (school, created_at)
+        """
+    )
     db.commit()
 
 
@@ -2993,6 +3029,38 @@ def _valid_optional_url(raw, max_len=1000):
     return s
 
 
+def _valid_avatar_value(raw):
+    s = (raw or "").strip()
+    if not s:
+        return ""
+    if s.startswith("/uploads/avatars/"):
+        return s if len(s) <= 300 else None
+    if len(s) > 4000:
+        return None
+    if s.startswith("data:image/svg+xml"):
+        return s
+    if s.startswith("http://") or s.startswith("https://"):
+        return s
+    return None
+
+
+def _save_avatar_upload(file_storage):
+    if file_storage is None or not file_storage.filename:
+        return ""
+    original = secure_filename(file_storage.filename)
+    ext = original.rsplit(".", 1)[-1].lower() if "." in original else ""
+    if ext not in AVATAR_ALLOWED_EXTENSIONS:
+        return None
+    data = file_storage.read(AVATAR_MAX_BYTES + 1)
+    if not data or len(data) > AVATAR_MAX_BYTES:
+        return None
+    AVATAR_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"{secrets.token_urlsafe(18)}.{ext}"
+    path = AVATAR_UPLOAD_DIR / filename
+    path.write_bytes(data)
+    return f"/uploads/avatars/{filename}"
+
+
 @app.route("/profile", methods=["POST"])
 @login_required
 def profile_update():
@@ -3009,6 +3077,9 @@ def profile_update():
         return redirect("/settings.html?flash=notify_no_email")
     notify_val = 1 if (want_notify and contact_email) else 0
     email_val = contact_email
+    school = _normalize_school_name(request.form.get("school"))
+    if school is None:
+        return redirect("/settings.html?flash=invalid_school")
 
     cur_pwd = request.form.get("current_password") or ""
     new_pwd = request.form.get("new_password") or ""
@@ -3030,12 +3101,28 @@ def profile_update():
                level_pgw, level_spanish, level_art,
                pro_verified_german, pro_verified_math, pro_verified_english,
                pro_verified_biology, pro_verified_pgw, pro_verified_spanish,
-               pro_verified_art
+               pro_verified_art,
+               avatar_url
         FROM users WHERE id = ?
         """,
         (uid,),
     ).fetchone()
+    if level_row is None:
+        return redirect("/login.html?flash=needlogin")
+    avatar_url = level_row["avatar_url"] or ""
+    uploaded_avatar = _save_avatar_upload(request.files.get("avatar_upload"))
+    if uploaded_avatar is None:
+        return redirect("/settings.html?flash=bad_avatar")
+    if uploaded_avatar:
+        avatar_url = uploaded_avatar
+    elif request.form.get("avatar_choice") == "builder":
+        built_avatar = _valid_avatar_value(request.form.get("avatar_data"))
+        if built_avatar is None:
+            return redirect("/settings.html?flash=bad_avatar")
+        avatar_url = built_avatar
     vg, vm, ve, vb, vp, vs, va = next_pro_verification_values(level_row, levels)
+    if school:
+        db.execute("INSERT OR IGNORE INTO schools (name) VALUES (?)", (school,))
     if pwd_change:
         row = db.execute(
             "SELECT password_hash FROM users WHERE id = ?",
@@ -3052,13 +3139,14 @@ def profile_update():
                 pro_verified_biology = ?, pro_verified_pgw = ?, pro_verified_spanish = ?,
                 pro_verified_art = ?,
                 contact_email = ?, notify_laden_email = ?,
+                school = ?, avatar_url = ?,
                 password_hash = ?
             WHERE id = ?
             """,
             (
                 lg, lm, le, lb, lp, ls, la,
                 vg, vm, ve, vb, vp, vs, va,
-                email_val, notify_val, new_hash, uid,
+                email_val, notify_val, school, avatar_url, new_hash, uid,
             ),
         )
     else:
@@ -3069,16 +3157,18 @@ def profile_update():
                 pro_verified_german = ?, pro_verified_math = ?, pro_verified_english = ?,
                 pro_verified_biology = ?, pro_verified_pgw = ?, pro_verified_spanish = ?,
                 pro_verified_art = ?,
-                contact_email = ?, notify_laden_email = ?
+                contact_email = ?, notify_laden_email = ?,
+                school = ?, avatar_url = ?
             WHERE id = ?
             """,
             (
                 lg, lm, le, lb, lp, ls, la,
                 vg, vm, ve, vb, vp, vs, va,
-                email_val, notify_val, uid,
+                email_val, notify_val, school, avatar_url, uid,
             ),
         )
     db.commit()
+    session["school"] = school or ""
     return redirect("/settings.html?flash=saved")
 
 
@@ -3098,9 +3188,12 @@ def api_profile_update():
     if want_notify and not contact_email:
         return jsonify(error="notify_no_email"), 400
     notify_val = 1 if (want_notify and contact_email) else 0
-    avatar_url = _valid_optional_url(data.get("avatar_url"), 1000)
+    avatar_url = _valid_avatar_value(data.get("avatar_url"))
     if avatar_url is None:
         return jsonify(error="invalid_avatar_url"), 400
+    school = _normalize_school_name(data.get("school"))
+    if school is None:
+        return jsonify(error="invalid_school"), 400
     raw_iserv = (data.get("iserv_email") or "").strip()
     iserv_email = _valid_contact_email(raw_iserv)
     if raw_iserv and iserv_email is None:
@@ -3131,7 +3224,11 @@ def api_profile_update():
         """,
         (uid,),
     ).fetchone()
+    if level_row is None:
+        return jsonify(error="auth"), 401
     vg, vm, ve, vb, vp, vs, va = next_pro_verification_values(level_row, levels)
+    if school:
+        db.execute("INSERT OR IGNORE INTO schools (name) VALUES (?)", (school,))
     if pwd_change:
         row = db.execute(
             "SELECT password_hash FROM users WHERE id = ?",
@@ -3146,7 +3243,7 @@ def api_profile_update():
                 pro_verified_german = ?, pro_verified_math = ?, pro_verified_english = ?,
                 pro_verified_biology = ?, pro_verified_pgw = ?, pro_verified_spanish = ?,
                 pro_verified_art = ?,
-                contact_email = ?, notify_laden_email = ?,
+                contact_email = ?, notify_laden_email = ?, school = ?,
                 avatar_url = ?, iserv_email = ?, password_hash = ?
             WHERE id = ?
             """,
@@ -3167,6 +3264,7 @@ def api_profile_update():
                 va,
                 contact_email,
                 notify_val,
+                school,
                 avatar_url,
                 iserv_email or "",
                 generate_password_hash(new_pwd),
@@ -3181,18 +3279,90 @@ def api_profile_update():
                 pro_verified_german = ?, pro_verified_math = ?, pro_verified_english = ?,
                 pro_verified_biology = ?, pro_verified_pgw = ?, pro_verified_spanish = ?,
                 pro_verified_art = ?,
-                contact_email = ?, notify_laden_email = ?,
+                contact_email = ?, notify_laden_email = ?, school = ?,
                 avatar_url = ?, iserv_email = ?
             WHERE id = ?
             """,
             (
                 lg, lm, le, lb, lp, ls, la,
                 vg, vm, ve, vb, vp, vs, va,
-                contact_email, notify_val, avatar_url, iserv_email or "", uid,
+                contact_email, notify_val, school, avatar_url, iserv_email or "", uid,
             ),
         )
     db.commit()
+    session["school"] = school or ""
     return jsonify(ok=True, user=_public_user_payload(db, uid))
+
+
+@app.route("/api/learning-places", methods=["GET"])
+@login_required_api
+def learning_places_list():
+    db = get_db()
+    school = admin_school(db)
+    if school:
+        rows = db.execute(
+            """
+            SELECT id, username, school, name, address, note, created_at
+            FROM learning_places
+            WHERE school = ? OR school = ''
+            ORDER BY datetime(created_at) DESC, id DESC
+            LIMIT 50
+            """,
+            (school,),
+        ).fetchall()
+    else:
+        rows = db.execute(
+            """
+            SELECT id, username, school, name, address, note, created_at
+            FROM learning_places
+            ORDER BY datetime(created_at) DESC, id DESC
+            LIMIT 50
+            """
+        ).fetchall()
+    return jsonify(
+        places=[
+            {
+                "id": row["id"],
+                "username": row["username"],
+                "school": row["school"] or "",
+                "name": row["name"],
+                "address": row["address"] or "",
+                "note": row["note"] or "",
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
+    )
+
+
+@app.route("/api/learning-places", methods=["POST"])
+@login_required_api
+def learning_places_create():
+    data = request.get_json(silent=True) or {}
+    name = " ".join((data.get("name") or "").strip().split())
+    address = " ".join((data.get("address") or "").strip().split())
+    note = (data.get("note") or "").strip()
+    if not name or len(name) > 120:
+        return jsonify(error="invalid_name"), 400
+    if len(address) > 200:
+        return jsonify(error="invalid_address"), 400
+    if len(note) > 500:
+        return jsonify(error="invalid_note"), 400
+    db = get_db()
+    uid = session["user_id"]
+    user = _public_user_payload(db, uid)
+    if user is None:
+        return jsonify(error="auth"), 401
+    school = user["school"] or ""
+    db.execute(
+        """
+        INSERT INTO learning_places (user_id, username, school, name, address, note)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (uid, user["username"], school, name, address, note),
+    )
+    db.commit()
+    return jsonify(ok=True)
 
 
 @app.route("/api/me")

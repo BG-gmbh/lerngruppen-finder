@@ -35,7 +35,44 @@
       <h1>Einstellungen</h1>
       <p class="field-hint">Pro · Mittel · Noob. Passwort unten nur ausfüllen, wenn du es ändern willst. Änderungen mit „Speichern“ übernehmen.</p>
 
-      <form method="post" action="/profile" class="stack-form">
+      <form method="post" action="/profile" class="stack-form" enctype="multipart/form-data">
+        <fieldset class="subject-levels subject-levels-plain">
+          <legend>Profil</legend>
+          <div class="avatar-editor">
+            <div class="avatar-preview" id="avatar-preview" aria-hidden="true">LF</div>
+            <div class="avatar-controls">
+              <label>
+                Bild hochladen
+                <input id="avatar-upload" name="avatar_upload" type="file" accept="image/png,image/jpeg,image/gif,image/webp">
+              </label>
+              <label>
+                Avatar-Farbe
+                <input id="avatar-color" type="color" value="#3d9cf5">
+              </label>
+              <label>
+                Kürzel
+                <input id="avatar-initials" type="text" maxlength="2" placeholder="AB" autocomplete="off">
+              </label>
+              <label>
+                Symbol
+                <select id="avatar-symbol">
+                  <option value="">Keins</option>
+                  <option value="★">Stern</option>
+                  <option value="✓">Haken</option>
+                  <option value="∞">Unendlich</option>
+                  <option value="✦">Glanz</option>
+                </select>
+              </label>
+              <input id="avatar-choice" name="avatar_choice" type="hidden" value="">
+              <input id="avatar-data" name="avatar_data" type="hidden" value="">
+            </div>
+          </div>
+          <label>
+            Lehrort / Schule
+            <input id="settings-school" name="school" type="text" maxlength="120" autocomplete="organization" placeholder="z. B. Stadtteilschule Mitte">
+          </label>
+        </fieldset>
+
         <fieldset class="subject-levels subject-levels-plain">
           <div class="subject-row">
             <span class="subject-name">Deutsch</span>
@@ -170,7 +207,69 @@
         if (em && data.contact_email) em.value = data.contact_email;
         var n = document.getElementById("settings-notify-laden");
         if (n) n.checked = !!data.notify_laden_email;
+        var school = document.getElementById("settings-school");
+        if (school) school.value = data.school || "";
+        initAvatar(data);
       });
+
+    function initialsFromName(name) {
+      return (name || "LF").trim().slice(0, 2).toUpperCase() || "LF";
+    }
+
+    function svgAvatar(color, initials, symbol) {
+      var safeInitials = (initials || "LF").replace(/[<>&"]/g, "").slice(0, 2).toUpperCase();
+      var safeSymbol = (symbol || "").replace(/[<>&"]/g, "").slice(0, 1);
+      return '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240">' +
+        '<rect width="240" height="240" rx="56" fill="' + color + '"/>' +
+        '<circle cx="184" cy="56" r="30" fill="rgba(255,255,255,.24)"/>' +
+        '<text x="120" y="138" text-anchor="middle" font-family="Arial, sans-serif" font-size="72" font-weight="700" fill="#081018">' + safeInitials + '</text>' +
+        (safeSymbol ? '<text x="120" y="196" text-anchor="middle" font-family="Arial, sans-serif" font-size="38" fill="#081018">' + safeSymbol + '</text>' : '') +
+        '</svg>';
+    }
+
+    function setAvatarData(color, initials, symbol) {
+      var preview = document.getElementById("avatar-preview");
+      var data = document.getElementById("avatar-data");
+      var choice = document.getElementById("avatar-choice");
+      var svg = svgAvatar(color, initials, symbol);
+      var url = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+      if (preview) {
+        preview.style.backgroundImage = "url('" + url + "')";
+        preview.textContent = "";
+      }
+      if (data) data.value = url;
+      if (choice) choice.value = "builder";
+    }
+
+    function initAvatar(data) {
+      var preview = document.getElementById("avatar-preview");
+      var color = document.getElementById("avatar-color");
+      var initials = document.getElementById("avatar-initials");
+      var symbol = document.getElementById("avatar-symbol");
+      var upload = document.getElementById("avatar-upload");
+      if (!preview || !color || !initials || !symbol || !upload) return;
+      initials.value = initialsFromName(data.username);
+      if (data.avatar_url) {
+        preview.style.backgroundImage = "url('" + data.avatar_url + "')";
+        preview.textContent = "";
+      } else {
+        setAvatarData(color.value, initials.value, symbol.value);
+      }
+      [color, initials, symbol].forEach(function (el) {
+        el.addEventListener("input", function () {
+          setAvatarData(color.value, initials.value, symbol.value);
+        });
+      });
+      upload.addEventListener("change", function () {
+        var file = upload.files && upload.files[0];
+        if (!file) return;
+        var url = URL.createObjectURL(file);
+        preview.style.backgroundImage = "url('" + url + "')";
+        preview.textContent = "";
+        var choice = document.getElementById("avatar-choice");
+        if (choice) choice.value = "upload";
+      });
+    }
   </script>
 </body>
 </html>
