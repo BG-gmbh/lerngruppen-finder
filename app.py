@@ -2,6 +2,7 @@ import os
 import secrets
 import sqlite3
 import ipaddress
+import re
 from contextlib import closing
 from datetime import datetime
 from functools import wraps
@@ -38,6 +39,7 @@ CHAT_VERIFIED_COLUMN = {
 }
 CHAT_MAX_USERS = 5
 CHAT_BODY_MAX = 500
+CHAT_ROOM_SUFFIX_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 AVATAR_UPLOAD_DIR = Path(__file__).resolve().parent / "web" / "uploads" / "avatars"
 AVATAR_ALLOWED_EXTENSIONS = frozenset({"png", "jpg", "jpeg", "gif", "webp"})
 AVATAR_MAX_BYTES = 2 * 1024 * 1024
@@ -120,6 +122,36 @@ def chat_subject_key(raw):
     if not raw or raw not in CHAT_SUBJECTS:
         return None
     return raw
+
+
+def chat_room_key(raw):
+    value = (raw or "").strip().lower()
+    if not value:
+        return None, None
+    if ":" not in value:
+        subject = chat_subject_key(value)
+        if not subject:
+            return None, None
+        return subject, subject
+    subject, suffix = value.split(":", 1)
+    subject = chat_subject_key(subject)
+    if not subject:
+        return None, None
+    suffix = suffix.strip()
+    if not CHAT_ROOM_SUFFIX_RE.fullmatch(suffix):
+        return None, None
+    return f"{subject}:{suffix}", subject
+
+
+def chat_room_label(room_key):
+    room_key = (room_key or "").strip().lower()
+    room, subject = chat_room_key(room_key)
+    if not room or not subject:
+        return room_key or "Chat"
+    base = CHAT_SUBJECT_LABELS.get(subject, subject)
+    if room == subject:
+        return base
+    return f"{base} · {room.split(':', 1)[1]}"
 
 
 def parse_subject_levels(form):
@@ -2249,104 +2281,101 @@ def chat_rooms():
     uid = session["user_id"]
     rooms = []
     creatable = []
-    for sub in CHAT_SUBJECT_ORDER:
-        if not user_may_access_subject(db, uid, sub):
+    for base_subject in CHAT_SUBJECT_ORDER:
+        if not user_may_access_subject(db, uid, base_subject):
             continue
-        verified_col = CHAT_VERIFIED_COLUMN[sub]
-        members = db.execute(
-            f"""
-            SELECT
-                p.username,
-                p.level,
-                COALESCE(u.{verified_col}, 0) AS verified,
-                COALESCE(u.role, 'user') AS role
-            FROM chat_presence p
-            LEFT JOIN users u ON u.id = p.user_id
-            WHERE p.subject = ? ORDER BY p.username COLLATE NOCASE
-            """,
-            (sub,),
-        ).fetchall()
-        you = db.execute(
-            "SELECT 1 FROM chat_presence WHERE subject = ? AND user_id = ?",
-            (sub, uid),
-        ).fetchone()
-        appointment_row = db.execute(
-            "SELECT appointment, location, started FROM chat_appointments WHERE subject = ?",
-            (sub,),
-        ).fetchone()
-        you_in = you is not None
-        count_total = len(members)
-        viewer_lv = _user_level_for_subject(db, uid, sub)
-        if count_total == 0:
-            db.execute("DELETE FROM chat_messages WHERE subject = ?", (sub,))
-            if viewer_lv == "pro":
-                creatable.append(
-                    {
-                        "subject": sub,
-                        "label": CHAT_SUBJECT_LABELS[sub],
-                    }
-                )
-            continue
-        non_pro_n = sum(1 for m in members if m["level"] != "pro")
-        pro_n = sum(1 for m in members if m["level"] == "pro")
-        if pro_n == 0:
-            db.execute("DELETE FROM chat_presence WHERE subject = ?", (sub,))
-            db.execute("DELETE FROM chat_messages WHERE subject = ?", (sub,))
-            if viewer_lv == "pro":
-                creatable.append(
-                    {
-                        "subject": sub,
-                        "label": CHAT_SUBJECT_LABELS[sub],
-                    }
-                )
-            continue
-        has_pro = pro_n >= 1
-        locked = bool(appointment_row and appointment_row["started"] and not you_in)
+        room_keys = [
+            row["subject"]
+            for row in db.execute(
+                "SELECT DISTINCT subject FROM chat_presence WHERE subject = ? OR subject LIKE ? ORDER BY subject",
+                (base_subject, f"{base_subject}:%"),
+            ).fetchall()
+        ]
+        viewer_lv = _user_level_for_subject(db, uid, base_subject)
         if viewer_lv == "pro":
-            can_join = not locked
-            join_block = "started" if locked else None
-            full = False
-        else:
-            slot_free = non_pro_n < CHAT_MAX_USERS
-            can_join = (you_in or (has_pro and slot_free and not locked))
-            if you_in:
-                join_block = None
-            elif locked:
-                join_block = "started"
-            elif not has_pro:
-                join_block = "need_pro"
-            elif not slot_free:
-                join_block = "full"
+            creatable.append({"subject": base_subject, "label": CHAT_SUBJECT_LABELS[base_subject]})
+        for room_key in room_keys:
+            verified_col = CHAT_VERIFIED_COLUMN[base_subject]
+            members = db.execute(
+                f"""
+                SELECT
+                    p.username,
+                    p.level,
+                    COALESCE(u.{verified_col}, 0) AS verified,
+                    COALESCE(u.role, 'user') AS role
+                FROM chat_presence p
+                LEFT JOIN users u ON u.id = p.user_id
+                WHERE p.subject = ? ORDER BY p.username COLLATE NOCASE
+                """,
+                (room_key,),
+            ).fetchall()
+            you = db.execute(
+                "SELECT 1 FROM chat_presence WHERE subject = ? AND user_id = ?",
+                (room_key, uid),
+            ).fetchone()
+            appointment_row = db.execute(
+                "SELECT appointment, location, started FROM chat_appointments WHERE subject = ?",
+                (room_key,),
+            ).fetchone()
+            you_in = you is not None
+            count_total = len(members)
+            if count_total == 0:
+                db.execute("DELETE FROM chat_messages WHERE subject = ?", (room_key,))
+                continue
+            non_pro_n = sum(1 for m in members if m["level"] != "pro")
+            pro_n = sum(1 for m in members if m["level"] == "pro")
+            if pro_n == 0:
+                db.execute("DELETE FROM chat_presence WHERE subject = ?", (room_key,))
+                db.execute("DELETE FROM chat_messages WHERE subject = ?", (room_key,))
+                continue
+            has_pro = pro_n >= 1
+            locked = bool(appointment_row and appointment_row["started"] and not you_in)
+            if viewer_lv == "pro":
+                can_join = not locked
+                join_block = "started" if locked else None
+                full = False
             else:
-                join_block = None
-            full = not can_join
-        rooms.append(
-            {
-                "subject": sub,
-                "label": CHAT_SUBJECT_LABELS[sub],
-                "count": count_total,
-                "count_non_pro": non_pro_n,
-                "count_pro": pro_n,
-                "has_pro": has_pro,
-                "max": CHAT_MAX_USERS,
-                "full": full,
-                "can_join": can_join,
-                "join_block": join_block,
-                "you_in": you_in,
-                "appointment": appointment_row["appointment"] if appointment_row else None,
-                "location": appointment_row["location"] if appointment_row else None,
-                "started": bool(appointment_row["started"]) if appointment_row else False,
-                "members": [
-                    {
-                        "username": m["username"],
-                        "level": m["level"],
-                        "pro_verified": m["level"] == "pro"
-                        and (bool(m["verified"]) or m["role"] in ("teacher", "admin", "dev")),
-                    }
-                    for m in members
-                ],
-            }
-        )
+                slot_free = non_pro_n < CHAT_MAX_USERS
+                can_join = (you_in or (has_pro and slot_free and not locked))
+                if you_in:
+                    join_block = None
+                elif locked:
+                    join_block = "started"
+                elif not has_pro:
+                    join_block = "need_pro"
+                elif not slot_free:
+                    join_block = "full"
+                else:
+                    join_block = None
+                full = not can_join
+            rooms.append(
+                {
+                    "subject": room_key,
+                    "base_subject": base_subject,
+                    "label": chat_room_label(room_key),
+                    "count": count_total,
+                    "count_non_pro": non_pro_n,
+                    "count_pro": pro_n,
+                    "has_pro": has_pro,
+                    "max": CHAT_MAX_USERS,
+                    "full": full,
+                    "can_join": can_join,
+                    "join_block": join_block,
+                    "you_in": you_in,
+                    "appointment": appointment_row["appointment"] if appointment_row else None,
+                    "location": appointment_row["location"] if appointment_row else None,
+                    "started": bool(appointment_row["started"]) if appointment_row else False,
+                    "members": [
+                        {
+                            "username": m["username"],
+                            "level": m["level"],
+                            "pro_verified": m["level"] == "pro"
+                            and (bool(m["verified"]) or m["role"] in ("teacher", "admin", "dev")),
+                        }
+                        for m in members
+                    ],
+                }
+            )
     db.commit()
     return jsonify(rooms=rooms, creatable=creatable)
 
@@ -2354,22 +2383,22 @@ def chat_rooms():
 @app.route("/api/chat/appointment", methods=["GET"])
 @login_required_api
 def chat_appointment_get():
-    subject = chat_subject_key(request.args.get("subject"))
-    if not subject:
+    room_key, base_subject = chat_room_key(request.args.get("subject"))
+    if not room_key:
         return jsonify(error="invalid_subject"), 400
     db = get_db()
     uid = session["user_id"]
-    if not user_may_access_subject(db, uid, subject):
+    if not user_may_access_subject(db, uid, base_subject):
         return jsonify(error="invalid_subject"), 400
     row = db.execute(
         "SELECT appointment, location, created_at, started, started_at, ended, ended_at FROM chat_appointments WHERE subject = ?",
-        (subject,),
+        (room_key,),
     ).fetchone()
     if not row:
         db.commit()
         return jsonify(appointment=None)
 
-    is_pro = _user_level_for_subject(db, uid, subject) == "pro"
+    is_pro = _user_level_for_subject(db, uid, base_subject) == "pro"
     your_rating = None
     rating_count = None
     rating_avg = None
@@ -2377,11 +2406,11 @@ def chat_appointment_get():
     if is_pro:
         your_rating = db.execute(
             "SELECT rating, comment FROM chat_ratings WHERE subject = ? AND user_id = ?",
-            (subject, uid),
+            (room_key, uid),
         ).fetchone()
         rating_stats = db.execute(
             "SELECT COUNT(*) AS count, AVG(rating) AS avg FROM chat_ratings WHERE subject = ?",
-            (subject,),
+            (room_key,),
         ).fetchone()
         rating_count = int(rating_stats["count"])
         rating_avg = (
@@ -2395,7 +2424,7 @@ def chat_appointment_get():
             WHERE r.subject = ?
             ORDER BY r.created_at ASC
             """,
-            (subject,),
+            (room_key,),
         ).fetchall()
         ratings = [
             {
@@ -2428,10 +2457,10 @@ def chat_appointment_get():
 @login_required_api
 def chat_appointment_post():
     data = request.get_json(silent=True) or {}
-    subject = chat_subject_key(data.get("subject"))
+    room_key, base_subject = chat_room_key(data.get("subject"))
     appointment = _normalize_appointment_datetime(data.get("appointment"))
     location = _normalize_appointment_location(data.get("location"))
-    if not subject:
+    if not room_key:
         return jsonify(error="invalid_subject"), 400
     if data.get("appointment") is None or not str(data.get("appointment")).strip():
         return jsonify(error="empty"), 400
@@ -2444,16 +2473,16 @@ def chat_appointment_post():
 
     db = get_db()
     uid = session["user_id"]
-    if not user_may_access_subject(db, uid, subject):
+    if not user_may_access_subject(db, uid, base_subject):
         return jsonify(error="invalid_subject"), 400
-    level = _user_level_for_subject(db, uid, subject)
+    level = _user_level_for_subject(db, uid, base_subject)
     if level != "pro":
         return jsonify(error="permission"), 403
 
     now = db.execute("SELECT datetime('now') AS now").fetchone()["now"]
     existing = db.execute(
         "SELECT 1 FROM chat_appointments WHERE subject = ?",
-        (subject,),
+        (room_key,),
     ).fetchone()
     if existing:
         db.execute(
@@ -2469,7 +2498,7 @@ def chat_appointment_post():
                 ended_at = NULL
             WHERE subject = ?
             """,
-            (appointment, location, uid, now, subject),
+            (appointment, location, uid, now, room_key),
         )
     else:
         db.execute(
@@ -2477,7 +2506,7 @@ def chat_appointment_post():
             INSERT INTO chat_appointments (subject, appointment, location, created_by, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (subject, appointment, location, uid, now, now),
+            (room_key, appointment, location, uid, now, now),
         )
     db.commit()
     return jsonify(ok=True)
@@ -2487,19 +2516,19 @@ def chat_appointment_post():
 @login_required_api
 def chat_appointment_start():
     data = request.get_json(silent=True) or {}
-    subject = chat_subject_key(data.get("subject"))
-    if not subject:
+    room_key, base_subject = chat_room_key(data.get("subject"))
+    if not room_key:
         return jsonify(error="invalid_subject"), 400
     db = get_db()
     uid = session["user_id"]
-    if not user_may_access_subject(db, uid, subject):
+    if not user_may_access_subject(db, uid, base_subject):
         return jsonify(error="invalid_subject"), 400
-    level = _user_level_for_subject(db, uid, subject)
+    level = _user_level_for_subject(db, uid, base_subject)
     if level != "pro":
         return jsonify(error="permission"), 403
     row = db.execute(
         "SELECT started, ended FROM chat_appointments WHERE subject = ?",
-        (subject,),
+        (room_key,),
     ).fetchone()
     if not row:
         db.commit()
@@ -2517,7 +2546,7 @@ def chat_appointment_start():
         SET started = 1, started_at = ?, updated_at = ?
         WHERE subject = ?
         """,
-        (now, now, subject),
+        (now, now, room_key),
     )
     db.commit()
     return jsonify(ok=True)
@@ -2527,19 +2556,19 @@ def chat_appointment_start():
 @login_required_api
 def chat_appointment_end():
     data = request.get_json(silent=True) or {}
-    subject = chat_subject_key(data.get("subject"))
-    if not subject:
+    room_key, base_subject = chat_room_key(data.get("subject"))
+    if not room_key:
         return jsonify(error="invalid_subject"), 400
     db = get_db()
     uid = session["user_id"]
-    if not user_may_access_subject(db, uid, subject):
+    if not user_may_access_subject(db, uid, base_subject):
         return jsonify(error="invalid_subject"), 400
-    level = _user_level_for_subject(db, uid, subject)
+    level = _user_level_for_subject(db, uid, base_subject)
     if level != "pro":
         return jsonify(error="permission"), 403
     row = db.execute(
         "SELECT started, ended FROM chat_appointments WHERE subject = ?",
-        (subject,),
+        (room_key,),
     ).fetchone()
     if not row:
         db.commit()
@@ -2553,9 +2582,9 @@ def chat_appointment_end():
     now = db.execute("SELECT datetime('now') AS now").fetchone()["now"]
     db.execute(
         "UPDATE chat_appointments SET ended = 1, ended_at = ?, updated_at = ? WHERE subject = ?",
-        (now, now, subject),
+        (now, now, room_key),
     )
-    db.execute("DELETE FROM chat_messages WHERE subject = ?", (subject,))
+    db.execute("DELETE FROM chat_messages WHERE subject = ?", (room_key,))
     db.commit()
     return jsonify(ok=True, cleared=True)
 
@@ -2564,8 +2593,8 @@ def chat_appointment_end():
 @login_required_api
 def chat_appointment_rate():
     data = request.get_json(silent=True) or {}
-    subject = chat_subject_key(data.get("subject"))
-    if not subject:
+    room_key, base_subject = chat_room_key(data.get("subject"))
+    if not room_key:
         return jsonify(error="invalid_subject"), 400
     try:
         rating = int(data.get("rating"))
@@ -2578,40 +2607,40 @@ def chat_appointment_rate():
         return jsonify(error="need_comment"), 400
     db = get_db()
     uid = session["user_id"]
-    if not user_may_access_subject(db, uid, subject):
+    if not user_may_access_subject(db, uid, base_subject):
         return jsonify(error="invalid_subject"), 400
-    level = _user_level_for_subject(db, uid, subject)
+    level = _user_level_for_subject(db, uid, base_subject)
     if level != "pro":
         db.commit()
         return jsonify(error="permission"), 403
     appointment = db.execute(
         "SELECT ended FROM chat_appointments WHERE subject = ?",
-        (subject,),
+        (room_key,),
     ).fetchone()
     if not appointment or not appointment["ended"]:
         db.commit()
         return jsonify(error="not_ended"), 400
     in_room = db.execute(
         "SELECT 1 FROM chat_presence WHERE subject = ? AND user_id = ?",
-        (subject, uid),
+        (room_key, uid),
     ).fetchone()
     if not in_room:
         db.commit()
         return jsonify(error="not_in_room"), 403
     existing = db.execute(
         "SELECT 1 FROM chat_ratings WHERE subject = ? AND user_id = ?",
-        (subject, uid),
+        (room_key, uid),
     ).fetchone()
     now = db.execute("SELECT datetime('now') AS now").fetchone()["now"]
     if existing:
         db.execute(
             "UPDATE chat_ratings SET rating = ?, comment = ?, created_at = ? WHERE subject = ? AND user_id = ?",
-            (rating, comment, now, subject, uid),
+            (rating, comment, now, room_key, uid),
         )
     else:
         db.execute(
             "INSERT INTO chat_ratings (subject, user_id, rating, comment, created_at) VALUES (?, ?, ?, ?, ?)",
-            (subject, uid, rating, comment, now),
+            (room_key, uid, rating, comment, now),
         )
     db.commit()
     return jsonify(ok=True)
