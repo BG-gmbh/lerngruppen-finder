@@ -44,20 +44,20 @@ class LernApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           theme: ThemeData(
             colorScheme: ColorScheme.fromSeed(
-              seedColor: const Color(0xff0b57d0),
+              seedColor: const Color(0xffff3b30),
               brightness: Brightness.light,
-              surface: const Color(0xfff8fafc),
+              surface: const Color(0xfff7f8fb),
             ),
-            scaffoldBackgroundColor: const Color(0xfff1f5f9),
+            scaffoldBackgroundColor: const Color(0xfff3f4f8),
             appBarTheme: const AppBarTheme(
               backgroundColor: Colors.white,
               foregroundColor: Color(0xff111827),
-              elevation: 0.5,
+              elevation: 0,
               centerTitle: false,
             ),
             cardTheme: CardTheme(
               color: Colors.white,
-              elevation: 1,
+              elevation: 2,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
                 side: const BorderSide(color: Color(0xffe5e7eb)),
@@ -82,7 +82,7 @@ class LernApp extends StatelessWidget {
             elevatedButtonTheme: ElevatedButtonThemeData(
               style: ElevatedButton.styleFrom(
                 minimumSize: const Size.fromHeight(48),
-                backgroundColor: const Color(0xff0b57d0),
+                backgroundColor: const Color(0xffff3b30),
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
@@ -91,17 +91,13 @@ class LernApp extends StatelessWidget {
             ),
             textButtonTheme: TextButtonThemeData(
               style: TextButton.styleFrom(
-                foregroundColor: const Color(0xff0b57d0),
+                foregroundColor: const Color(0xff00a7b0),
               ),
             ),
             chipTheme: ChipThemeData.fromDefaults(
-              secondaryColor: const Color(0xff0b57d0),
+              secondaryColor: const Color(0xff00c4cc),
               brightness: Brightness.light,
               labelStyle: const TextStyle(color: Color(0xff111827)),
-            ),
-            navigationBarTheme: const NavigationBarThemeData(
-              backgroundColor: Colors.white,
-              indicatorColor: Color(0xffdbeafe),
             ),
             useMaterial3: true,
           ),
@@ -1044,14 +1040,7 @@ class _AppShellState extends State<AppShell> {
           ),
         ],
       ),
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1120),
-            child: pages[selectedTab],
-          ),
-        ),
-      ),
+      body: SafeArea(child: pages[selectedTab]),
       bottomNavigationBar: NavigationBar(
         selectedIndex: selectedTab,
         onDestinationSelected: (value) => setState(() => tab = value),
@@ -1165,109 +1154,104 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
-          child: Card(
-            child: Padding(
-              padding: const EdgeInsets.all(22),
-              child: ListView(
-                padding: EdgeInsets.zero,
-                shrinkWrap: true,
-                children: [
-                  Text(title, style: Theme.of(context).textTheme.headlineMedium),
-                  const SizedBox(height: 20),
-                  SegmentedButton<AuthMode>(
-                    segments: [
-                      ButtonSegment(
-                        value: AuthMode.login,
-                        icon: const Icon(Icons.login),
-                        label: Text(tx(context, 'login')),
-                      ),
-                      ButtonSegment(
-                        value: AuthMode.invite,
-                        icon: const Icon(Icons.card_giftcard),
-                        label: Text(tx(context, 'codes')),
-                      ),
-                      ButtonSegment(
-                        value: AuthMode.setup,
-                        icon: const Icon(Icons.admin_panel_settings),
-                        label: Text(tx(context, 'admin')),
-                      ),
-                    ],
-                    selected: {mode},
-                    onSelectionChanged: busy
-                        ? null
-                        : (set) => setState(() {
-                              mode = set.first;
-                              error = null;
-                            }),
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: ListView(
+            padding: const EdgeInsets.all(20),
+            shrinkWrap: true,
+            children: [
+              Text(title, style: Theme.of(context).textTheme.headlineMedium),
+              const SizedBox(height: 20),
+              SegmentedButton<AuthMode>(
+                segments: [
+                  ButtonSegment(
+                    value: AuthMode.login,
+                    icon: const Icon(Icons.login),
+                    label: Text(tx(context, 'login')),
                   ),
-                  const SizedBox(height: 12),
-                if (mode == AuthMode.setup) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    tx(context, 'setup_only'),
-                    style: Theme.of(context).textTheme.bodySmall,
+                  ButtonSegment(
+                    value: AuthMode.invite,
+                    icon: const Icon(Icons.card_giftcard),
+                    label: Text(tx(context, 'codes')),
+                  ),
+                  ButtonSegment(
+                    value: AuthMode.setup,
+                    icon: const Icon(Icons.admin_panel_settings),
+                    label: Text(tx(context, 'admin')),
                   ),
                 ],
-                if (mode == AuthMode.invite) ...[
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: inviteCode,
-                    textInputAction: TextInputAction.next,
-                    decoration:
-                        InputDecoration(labelText: tx(context, 'invite_code')),
-                  ),
-                ],
+                selected: {mode},
+                onSelectionChanged: busy
+                    ? null
+                    : (set) => setState(() {
+                          mode = set.first;
+                          error = null;
+                        }),
+              ),
+              if (mode == AuthMode.setup) ...[
                 const SizedBox(height: 12),
-                TextField(
-                  controller: username,
-                  textInputAction: TextInputAction.next,
-                  decoration: InputDecoration(labelText: tx(context, 'username')),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: password,
-                  obscureText: true,
-                  onSubmitted: (_) => _submit(),
-                  decoration: InputDecoration(labelText: tx(context, 'password')),
-                ),
-                if (mode != AuthMode.login) ...[
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: passwordConfirm,
-                    obscureText: true,
-                    onSubmitted: (_) => _submit(),
-                    decoration: InputDecoration(
-                      labelText: tx(context, 'confirm_password'),
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 16),
-                FilledButton.icon(
-                  onPressed: busy ? null : _submit,
-                  icon: busy
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(icon),
-                  label: Text(action),
-                ),
-                if (error != null || widget.error != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    error ?? widget.error!,
-                    style: TextStyle(color: Theme.of(context).colorScheme.error),
-                  ),
-                ],
-                const SizedBox(height: 16),
                 Text(
-                  '${tx(context, 'api')}: $apiBaseUrl',
+                  tx(context, 'setup_only'),
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
-            ),
+              if (mode == AuthMode.invite) ...[
+                const SizedBox(height: 12),
+                TextField(
+                  controller: inviteCode,
+                  textInputAction: TextInputAction.next,
+                  decoration:
+                      InputDecoration(labelText: tx(context, 'invite_code')),
+                ),
+              ],
+              const SizedBox(height: 12),
+              TextField(
+                controller: username,
+                textInputAction: TextInputAction.next,
+                decoration: InputDecoration(labelText: tx(context, 'username')),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: password,
+                obscureText: true,
+                onSubmitted: (_) => _submit(),
+                decoration: InputDecoration(labelText: tx(context, 'password')),
+              ),
+              if (mode != AuthMode.login) ...[
+                const SizedBox(height: 12),
+                TextField(
+                  controller: passwordConfirm,
+                  obscureText: true,
+                  onSubmitted: (_) => _submit(),
+                  decoration: InputDecoration(
+                    labelText: tx(context, 'confirm_password'),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: busy ? null : _submit,
+                icon: busy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(icon),
+                label: Text(action),
+              ),
+              if (error != null || widget.error != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  error ?? widget.error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
+              const SizedBox(height: 16),
+              Text(
+                '${tx(context, 'api')}: $apiBaseUrl',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
           ),
         ),
       ),
@@ -1331,28 +1315,23 @@ class DashboardScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+      padding: const EdgeInsets.all(16),
       children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                UserAvatar(user: user, radius: 28),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text('${tx(context, 'hello')}, ${displayName(user.username)}',
-                      style: Theme.of(context).textTheme.headlineSmall),
-                ),
-                if (user.isStaff) ...[
-                  const SizedBox(width: 8),
-                  Icon(user.roleIcon,
-                      size: 26, color: Theme.of(context).colorScheme.primary),
-                ],
-              ],
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            UserAvatar(user: user, radius: 28),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text('${tx(context, 'hello')}, ${displayName(user.username)}',
+                  style: Theme.of(context).textTheme.headlineSmall),
             ),
-          ),
+            if (user.isStaff) ...[
+              const SizedBox(width: 8),
+              Icon(user.roleIcon,
+                  size: 26, color: Theme.of(context).colorScheme.primary),
+            ],
+          ],
         ),
         const SizedBox(height: 16),
         Wrap(
