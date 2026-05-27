@@ -1,11 +1,12 @@
 import os
 import secrets
 import sqlite3
+import ipaddress
 from contextlib import closing
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from dotenv import load_dotenv
 from flask import Flask, g, jsonify, redirect, request, send_from_directory, session
@@ -53,13 +54,9 @@ ALLOWED_ORIGINS = frozenset(
 def add_flutter_cors_headers(response):
     origin = request.headers.get("Origin", "")
     normalized_origin = origin.rstrip("/")
-    allowed_prefixes = (
-        "http://localhost:",
-        "http://127.0.0.1:",
-        "http://0.0.0.0:",
-    )
-    allow_origin = any(origin.startswith(prefix) for prefix in allowed_prefixes) or (
-        normalized_origin in ALLOWED_ORIGINS
+    allow_origin = (
+        _is_local_origin(origin)
+        or normalized_origin in ALLOWED_ORIGINS
     )
     if allow_origin:
         response.headers["Access-Control-Allow-Origin"] = origin
@@ -71,6 +68,23 @@ def add_flutter_cors_headers(response):
             "GET, POST, PUT, DELETE, OPTIONS"
         )
     return response
+
+
+def _is_local_origin(origin):
+    try:
+        parsed = urlparse(origin)
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    host = (parsed.hostname or "").lower()
+    if host in {"localhost", "127.0.0.1", "0.0.0.0"}:
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return not ip.is_global
 
 
 def _normalize_appointment_datetime(raw):
