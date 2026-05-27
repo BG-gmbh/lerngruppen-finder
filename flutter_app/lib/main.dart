@@ -1,15 +1,28 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-const apiBaseUrl = String.fromEnvironment(
+const _apiBaseUrlFromEnv = String.fromEnvironment(
   'API_BASE_URL',
-  defaultValue: 'http://127.0.0.1:5000',
+  defaultValue: '',
 );
+
+String _defaultApiBaseUrl() {
+  if (_apiBaseUrlFromEnv.isNotEmpty) {
+    return _apiBaseUrlFromEnv;
+  }
+  if (kIsWeb) {
+    return Uri.base.origin;
+  }
+  return 'http://127.0.0.1:5000';
+}
+
+final apiBaseUrl = _defaultApiBaseUrl();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -385,8 +398,8 @@ const _baseText = {
   'delete_invite_code_q': 'Einladungscode löschen?',
   'delete_invite_code_msg': 'wird gelöscht und kann danach nicht mehr benutzt werden.',
   'no_open_codes': 'Keine offenen Codes.',
-  'admin_code_licenses': 'Admin-Code-Lizenzen',
-  'teacher_code_licenses': 'Lehrer-Code-Lizenzen',
+  'admin_code_licenses': 'Schul-Lizenzlimit',
+  'teacher_code_licenses': 'Schule',
   'unlimited_zero': '0 = unbegrenzt',
   'positive_numbers': 'Bitte positive Zahlen oder 0 eingeben.',
   'code_licenses_saved': 'Code-Lizenzen gespeichert',
@@ -394,6 +407,8 @@ const _baseText = {
   'occupied': 'belegt',
   'role_licenses_unlimited': 'Code-Lizenzen deiner Rolle: unbegrenzt',
   'role_licenses': 'Code-Lizenzen deiner Rolle',
+  'license_users': 'Nutzer',
+  'license_open_codes': 'offene Codes',
   'no_chat_data': 'Keine Chatdaten gefunden.',
   'messages': 'Nachrichten',
   'reports': 'Meldungen',
@@ -513,7 +528,7 @@ const _baseText = {
   'invalid_logo_url': 'Logo-URL ist ungültig.',
   'invalid_role': 'Rolle ist ungültig.',
   'invalid_limit': 'Code-Lizenzlimit ist ungültig.',
-  'code_limit': 'Keine freie Code-Lizenz. Lösche einen ungenutzten Code.',
+  'code_limit': 'Keine freie Code-Lizenz verfügbar.',
   'invalid_datetime': 'Bitte ein gültiges Datum wählen.',
   'empty_location': 'Bitte einen Ort eingeben.',
   'invalid_location': 'Der Ort ist zu lang.',
@@ -2627,6 +2642,7 @@ class _AdminScreenState extends State<AdminScreen> {
   Map<String, dynamic> inviteCodeLimits = const {};
   String schoolLogoUrl = '';
   String selectedLogoSchool = '';
+  String selectedLicenseSchool = '';
 
   @override
   void initState() {
@@ -3148,30 +3164,24 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   String _inviteLicenseText() {
-    final current = inviteCodeLimits['current'] as Map? ?? const {};
-    final limit = current['limit'] is int
-        ? current['limit'] as int
-        : int.tryParse(current['limit']?.toString() ?? '') ?? 0;
-    final active = current['active'] is int
-        ? current['active'] as int
-        : int.tryParse(current['active']?.toString() ?? '') ?? 0;
-    if (widget.isDev) {
-      String poolText(String key) {
-        final pool = inviteCodeLimits[key] as Map? ?? const {};
-        final poolLimit = pool['limit'] is int
-            ? pool['limit'] as int
-            : int.tryParse(pool['limit']?.toString() ?? '') ?? 0;
-        final poolActive = pool['active'] is int
-            ? pool['active'] as int
-            : int.tryParse(pool['active']?.toString() ?? '') ?? 0;
-        return '$poolActive/${poolLimit == 0 ? 'unbegrenzt' : poolLimit}';
-      }
+    int intValue(Object? value) =>
+        value is int ? value : int.tryParse(value?.toString() ?? '') ?? 0;
 
-      return '${tx(context, 'license_pool')}: Admins ${poolText('admin')} · '
-          '${tx(context, 'teachers')} ${poolText('teacher')}';
-    }
-    if (limit == 0) return tx(context, 'role_licenses_unlimited');
-    return '${tx(context, 'role_licenses')}: $active / $limit ${tx(context, 'occupied')}';
+    final current = inviteCodeLimits['current'] as Map? ?? const {};
+    final limit = intValue(current['limit']);
+    final active = intValue(current['active']);
+    final users = intValue(current['users']);
+    final codes = intValue(current['codes']);
+    final school = inviteCodeLimits['school']?.toString() ??
+        current['school']?.toString() ??
+        '';
+    final prefix = widget.isDev && school.isNotEmpty
+        ? '${tx(context, 'license_pool')}: $school'
+        : tx(context, 'role_licenses');
+    if (limit == 0) return '$prefix: unbegrenzt';
+    return '$prefix: $active / $limit '
+        '${tx(context, 'occupied')} ($users ${tx(context, 'license_users')}, '
+        '$codes ${tx(context, 'license_open_codes')})';
   }
 
   String _ratingSubtitle(Map<String, dynamic> rating) {
@@ -3249,7 +3259,12 @@ class _AdminScreenState extends State<AdminScreen> {
         AdminSection.schools => await widget.api.getJson('/api/admin/schools'),
       };
       final limitsData = section == AdminSection.codes
-          ? await widget.api.getJson('/api/admin/invite-code-limits')
+          ? await widget.api.getJson(
+              '/api/admin/invite-code-limits',
+              widget.isDev && selectedLicenseSchool.isNotEmpty
+                  ? {'school': selectedLicenseSchool}
+                  : null,
+            )
           : null;
       final reportsData = section == AdminSection.chats
           ? await widget.api.getJson('/api/admin/chat-reports')
@@ -3419,33 +3434,34 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Future<void> _editInviteCodeLimits() async {
-    final adminInitial = (inviteCodeLimits['admin_limit'] ?? 0).toString();
-    final teacherInitial = (inviteCodeLimits['teacher_limit'] ?? 0).toString();
-    final adminLimit = await _textDialog(
+    final currentSchool = inviteCodeLimits['school']?.toString() ??
+        selectedLicenseSchool;
+    final school = await _textDialog(
+      title: tx(context, 'teacher_code_licenses'),
+      label: tx(context, 'school'),
+      initialValue: currentSchool,
+    );
+    if (school == null) return;
+    final limitInitial = (inviteCodeLimits['school_limit'] ??
+            (inviteCodeLimits['current'] as Map?)?['limit'] ??
+            0)
+        .toString();
+    final limit = await _textDialog(
       title: tx(context, 'admin_code_licenses'),
       label: tx(context, 'unlimited_zero'),
-      initialValue: adminInitial,
+      initialValue: limitInitial,
     );
-    if (adminLimit == null) return;
-    final teacherLimit = await _textDialog(
-      title: tx(context, 'teacher_code_licenses'),
-      label: tx(context, 'unlimited_zero'),
-      initialValue: teacherInitial,
-    );
-    if (teacherLimit == null) return;
-    final adminValue = int.tryParse(adminLimit.trim());
-    final teacherValue = int.tryParse(teacherLimit.trim());
-    if (adminValue == null ||
-        teacherValue == null ||
-        adminValue < 0 ||
-        teacherValue < 0) {
+    if (limit == null) return;
+    final limitValue = int.tryParse(limit.trim());
+    if (limitValue == null || limitValue < 0) {
       setState(() => status = tx(context, 'positive_numbers'));
       return;
     }
+    selectedLicenseSchool = school.trim();
     await _run(tx(context, 'code_licenses_saved'), () async {
       await widget.api.postJson('/api/admin/invite-code-limits', {
-        'admin_limit': adminValue,
-        'teacher_limit': teacherValue,
+        'school': selectedLicenseSchool,
+        'school_limit': limitValue,
       });
     });
   }

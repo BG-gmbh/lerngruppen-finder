@@ -42,17 +42,26 @@ AVATAR_ALLOWED_EXTENSIONS = frozenset({"png", "jpg", "jpeg", "gif", "webp"})
 AVATAR_MAX_BYTES = 2 * 1024 * 1024
 app = Flask(__name__, static_folder="web", static_url_path="")
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-nur-lokal-bitte-aendern")
+ALLOWED_ORIGINS = frozenset(
+    origin.strip().rstrip("/")
+    for origin in os.environ.get("FLASK_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+)
 
 
 @app.after_request
 def add_flutter_cors_headers(response):
     origin = request.headers.get("Origin", "")
+    normalized_origin = origin.rstrip("/")
     allowed_prefixes = (
         "http://localhost:",
         "http://127.0.0.1:",
         "http://0.0.0.0:",
     )
-    if any(origin.startswith(prefix) for prefix in allowed_prefixes):
+    allow_origin = any(origin.startswith(prefix) for prefix in allowed_prefixes) or (
+        normalized_origin in ALLOWED_ORIGINS
+    )
+    if allow_origin:
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Vary"] = "Origin"
         response.headers["Access-Control-Allow-Headers"] = (
@@ -571,38 +580,64 @@ def int_app_setting(db, key, default=0):
         return default
 
 
-def invite_code_limit_key(role):
-    return f"invite_code_limit_{role}"
+def school_license_limit_key(school):
+    school = (school or "").strip()
+    return f"school_license_limit::{school}" if school else "school_license_limit"
 
 
-def invite_code_limit_for_role(db, role):
-    if role not in ("admin", "teacher"):
-        return 0
-    return int_app_setting(db, invite_code_limit_key(role), 0)
+def school_license_limit(db, school):
+    return int_app_setting(db, school_license_limit_key(school), 0)
 
 
-def active_invite_code_count_for_creator_role(db, role):
-    if role not in ("admin", "teacher"):
-        return 0
-    row = db.execute(
+def set_school_license_limit(db, school, limit):
+    set_app_setting(db, school_license_limit_key(school), str(max(0, int(limit))))
+
+
+def invite_license_usage_for_school(db, school):
+    school = (school or "").strip()
+    user_row = db.execute(
+        """
+        SELECT COUNT(*) AS c
+        FROM users
+        WHERE school = ?
+        """,
+        (school,),
+    ).fetchone()
+    code_row = db.execute(
         """
         SELECT COUNT(*) AS c
         FROM invite_codes
-        WHERE used_at IS NULL AND created_by_role = ?
+        WHERE used_at IS NULL AND school = ?
         """,
-        (role,),
+        (school,),
     ).fetchone()
-    return int(row["c"] if row else 0)
-
-
-def invite_code_quota_payload(db, role):
-    limit = invite_code_limit_for_role(db, role)
-    active = active_invite_code_count_for_creator_role(db, role)
+    users = int(user_row["c"] or 0) if user_row else 0
+    codes = int(code_row["c"] or 0) if code_row else 0
     return {
+        "users": users,
+        "codes": codes,
+        "active": users + codes,
+    }
+
+
+def invite_code_quota_payload(db, school):
+    school = (school or "").strip()
+    limit = school_license_limit(db, school)
+    usage = invite_license_usage_for_school(db, school)
+    active = usage["active"]
+    return {
+        "school": school,
         "limit": limit,
+        "users": usage["users"],
+        "codes": usage["codes"],
         "active": active,
         "remaining": None if limit <= 0 else max(0, limit - active),
     }
+
+
+def school_license_has_free_slot(db, school):
+    quota = invite_code_quota_payload(db, school)
+    return quota["limit"] <= 0 or quota["active"] < quota["limit"]
 
 
 def school_logo_key(school):
@@ -1129,6 +1164,8 @@ def admin_create_user():
         return redirect("/admin.html?flash=invalid_class")
     if len(school) > 120:
         return redirect("/admin.html?flash=invalid_school")
+    if not school_license_has_free_slot(db, school):
+        return redirect("/admin.html?flash=code_limit")
     if school:
         db.execute("INSERT OR IGNORE INTO schools (name) VALUES (?)", (school,))
     try:
@@ -1368,9 +1405,12 @@ def admin_user_update(user_id):
     if len(school) > 120:
         return jsonify(error="invalid_school"), 400
     db = get_db()
-    row = db.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+    row = db.execute("SELECT id, school FROM users WHERE id = ?", (user_id,)).fetchone()
     if row is None:
         return jsonify(error="not_found"), 404
+    old_school = row["school"] or ""
+    if school != old_school and not school_license_has_free_slot(db, school):
+        return jsonify(error="code_limit", **invite_code_quota_payload(db, school)), 429
     class_name = "" if role in ("admin", "dev") else None
     if class_name is None:
         db.execute(
@@ -2057,13 +2097,11 @@ def admin_invite_list():
 @admin_api
 def admin_invite_code_limits_get():
     db = get_db()
-    role = session.get("role", "user")
+    school = (request.args.get("school") or "").strip() if is_dev_session() else admin_school(db)
     payload = {
-        "admin_limit": invite_code_limit_for_role(db, "admin"),
-        "teacher_limit": invite_code_limit_for_role(db, "teacher"),
-        "admin": invite_code_quota_payload(db, "admin"),
-        "teacher": invite_code_quota_payload(db, "teacher"),
-        "current": invite_code_quota_payload(db, role),
+        "school": school,
+        "school_limit": school_license_limit(db, school),
+        "current": invite_code_quota_payload(db, school),
         "can_edit": is_dev_session(),
     }
     return jsonify(payload)
@@ -2075,19 +2113,23 @@ def admin_invite_code_limits_post():
     if not is_dev_session():
         return jsonify(error="forbidden"), 403
     data = request.get_json(silent=True) or {}
+    school = (data.get("school") or "").strip()
+    if len(school) > 120:
+        return jsonify(error="invalid_school"), 400
     try:
-        admin_limit = max(0, int(data.get("admin_limit") or 0))
-        teacher_limit = max(0, int(data.get("teacher_limit") or 0))
+        limit = max(0, int(data.get("school_limit") or data.get("limit") or 0))
     except (TypeError, ValueError):
         return jsonify(error="invalid_limit"), 400
     db = get_db()
-    set_app_setting(db, invite_code_limit_key("admin"), str(admin_limit))
-    set_app_setting(db, invite_code_limit_key("teacher"), str(teacher_limit))
+    if school:
+        db.execute("INSERT OR IGNORE INTO schools (name) VALUES (?)", (school,))
+    set_school_license_limit(db, school, limit)
     db.commit()
     return jsonify(
         ok=True,
-        admin_limit=admin_limit,
-        teacher_limit=teacher_limit,
+        school=school,
+        school_limit=limit,
+        current=invite_code_quota_payload(db, school),
     )
 
 
@@ -2115,9 +2157,9 @@ def admin_invite_create():
             if role != "user":
                 return jsonify(error="forbidden"), 403
             class_name = teacher_class
-        quota = invite_code_quota_payload(db, session.get("role", "user"))
-        if quota["limit"] > 0 and quota["active"] >= quota["limit"]:
-            return jsonify(error="code_limit", **quota), 429
+    quota = invite_code_quota_payload(db, school)
+    if quota["limit"] > 0 and quota["active"] >= quota["limit"]:
+        return jsonify(error="code_limit", **quota), 429
     class_name = class_name_for_role(role, class_name)
     if class_name is None:
         return jsonify(error="invalid_class"), 400
@@ -3102,7 +3144,7 @@ def profile_update():
                pro_verified_german, pro_verified_math, pro_verified_english,
                pro_verified_biology, pro_verified_pgw, pro_verified_spanish,
                pro_verified_art,
-               avatar_url
+               avatar_url, school
         FROM users WHERE id = ?
         """,
         (uid,),
@@ -3121,6 +3163,8 @@ def profile_update():
             return redirect("/settings.html?flash=bad_avatar")
         avatar_url = built_avatar
     vg, vm, ve, vb, vp, vs, va = next_pro_verification_values(level_row, levels)
+    if school != (level_row["school"] or "") and not school_license_has_free_slot(db, school):
+        return redirect("/settings.html?flash=code_limit")
     if school:
         db.execute("INSERT OR IGNORE INTO schools (name) VALUES (?)", (school,))
     if pwd_change:
@@ -3219,7 +3263,7 @@ def api_profile_update():
                level_pgw, level_spanish, level_art,
                pro_verified_german, pro_verified_math, pro_verified_english,
                pro_verified_biology, pro_verified_pgw, pro_verified_spanish,
-               pro_verified_art
+               pro_verified_art, school
         FROM users WHERE id = ?
         """,
         (uid,),
@@ -3227,6 +3271,8 @@ def api_profile_update():
     if level_row is None:
         return jsonify(error="auth"), 401
     vg, vm, ve, vb, vp, vs, va = next_pro_verification_values(level_row, levels)
+    if school != (level_row["school"] or "") and not school_license_has_free_slot(db, school):
+        return jsonify(error="code_limit", **invite_code_quota_payload(db, school)), 429
     if school:
         db.execute("INSERT OR IGNORE INTO schools (name) VALUES (?)", (school,))
     if pwd_change:

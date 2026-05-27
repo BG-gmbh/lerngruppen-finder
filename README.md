@@ -54,6 +54,14 @@ flutter pub get
 flutter run -d chrome --dart-define=API_BASE_URL=http://127.0.0.1:5000
 ```
 
+Im Netzwerk erreichbar (nicht nur localhost):
+
+```bash
+cd /Users/admin/benjamin/lerngruppen-finder/flutter_app
+flutter pub get
+flutter run -d web-server --web-hostname 0.0.0.0 --web-port 8080 --dart-define=API_BASE_URL=http://<SERVER-IP>:5000
+```
+
 Android-Emulator:
 
 ```bash
@@ -117,6 +125,7 @@ Werte in einer Datei **`.env`** im Projektordner (Vorlage: **`.env.example`**). 
 | `FLASK_HOST`       | Standard: `0.0.0.0` |
 | `FLASK_PORT`       | Standard: `5000` |
 | `FLASK_DEBUG`      | `true` nur zum Entwickeln |
+| `FLASK_ALLOWED_ORIGINS` | Kommagetrennte erlaubte Web-Origins fuer CORS, z. B. `https://app.example.com` |
 
 ### SMTP (Lehrer-Benachrichtigung bei Laden-Käufen)
 

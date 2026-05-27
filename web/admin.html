@@ -152,14 +152,14 @@
       <p class="muted" id="code-limit-status">Code-Lizenzen werden geladen...</p>
       <form id="code-limit-form" class="stack-form hidden" autocomplete="off">
         <div class="form-row two">
-          <label>Admin-Limit
-            <input id="code-limit-admin" type="number" min="0" step="1" value="0">
+          <label>Schule
+            <input id="code-limit-school" type="text" maxlength="120" placeholder="z. B. Schule A">
           </label>
-          <label>Lehrer-Limit
-            <input id="code-limit-teacher" type="number" min="0" step="1" value="0">
+          <label>Schul-Limit
+            <input id="code-limit-school-limit" type="number" min="0" step="1" value="0">
           </label>
         </div>
-        <p class="field-hint">0 bedeutet unbegrenzt. Es zählen alle ungenutzten Codes, die von Admins oder Lehrern erstellt wurden.</p>
+        <p class="field-hint">0 bedeutet unbegrenzt. Pro Schule zählen alle Nutzerkonten und alle offenen Codes zusammen. Admin- und Lehrer-Codes verwenden denselben Pool.</p>
         <p><button type="submit" class="btn btn-secondary">Limits speichern</button></p>
       </form>
       <p><button type="button" class="btn" id="btn-new-code">Neuen Code erzeugen</button></p>
@@ -533,40 +533,46 @@
         var current = data.current || {};
         var limit = Number(current.limit || 0);
         var active = Number(current.active || 0);
+        var school = data.school || current.school || "";
+        var detail =
+          active +
+          "/" +
+          (limit || "unbegrenzt") +
+          " (" +
+          Number(current.users || 0) +
+          " Nutzer, " +
+          Number(current.codes || 0) +
+          " offene Codes)";
         if (data.can_edit) {
-          var admin = data.admin || {};
-          var teacher = data.teacher || {};
           status.textContent =
-            "Lizenz-Pool: Admins " +
-            Number(admin.active || 0) +
-            "/" +
-            (Number(admin.limit || 0) || "unbegrenzt") +
-            ", Lehrer " +
-            Number(teacher.active || 0) +
-            "/" +
-            (Number(teacher.limit || 0) || "unbegrenzt") +
+            "Lizenz-Pool" +
+            (school ? " für " + school : "") +
+            ": " +
+            detail +
             ".";
         } else if (limit > 0) {
           status.textContent =
-            "Code-Lizenzen deiner Rolle: " +
-            active +
-            " von " +
-            limit +
-            " belegt. Gelöschte Codes geben eine Lizenz wieder frei.";
+            "Schul-Lizenzen: " + active + " von " + limit + " belegt (" +
+            Number(current.users || 0) + " Nutzer, " +
+            Number(current.codes || 0) + " offene Codes).";
         } else {
-          status.textContent = "Code-Lizenzen deiner Rolle: unbegrenzt.";
+          status.textContent = "Schul-Lizenzen: unbegrenzt.";
         }
         if (form && data.can_edit) {
           form.classList.remove("hidden");
-          document.getElementById("code-limit-admin").value = String(Number(data.admin_limit || 0));
-          document.getElementById("code-limit-teacher").value = String(Number(data.teacher_limit || 0));
+          document.getElementById("code-limit-school").value = school;
+          document.getElementById("code-limit-school-limit").value = String(Number(data.school_limit || limit || 0));
         } else if (form) {
           form.classList.add("hidden");
         }
       }
 
-      function loadInviteCodeLimits() {
-        fetch("/api/admin/invite-code-limits", { credentials: "same-origin" })
+      function loadInviteCodeLimits(school) {
+        var url = "/api/admin/invite-code-limits";
+        if (school) {
+          url += "?school=" + encodeURIComponent(school);
+        }
+        fetch(url, { credentials: "same-origin" })
           .then(function (r) {
             if (r.status === 401 || r.status === 403) return null;
             return r.json();
@@ -628,7 +634,11 @@
                   x.d.active +
                   " von " +
                   x.d.limit +
-                  " sind belegt. Lösche einen ungenutzten Code, dann wird die Lizenz wieder frei.";
+                  " sind belegt (" +
+                  Number(x.d.users || 0) +
+                  " Nutzer, " +
+                  Number(x.d.codes || 0) +
+                  " offene Codes).";
               } else {
                 out.textContent = "Code konnte nicht erzeugt werden.";
               }
@@ -644,21 +654,21 @@
               " · " +
               (x.d.role || "user");
             loadCodes();
-            loadInviteCodeLimits();
+            loadInviteCodeLimits(x.d.school || "");
           });
       });
 
       document.getElementById("code-limit-form").addEventListener("submit", function (e) {
         e.preventDefault();
-        var adminLimit = Number(document.getElementById("code-limit-admin").value || 0);
-        var teacherLimit = Number(document.getElementById("code-limit-teacher").value || 0);
+        var school = (document.getElementById("code-limit-school").value || "").trim();
+        var schoolLimit = Number(document.getElementById("code-limit-school-limit").value || 0);
         fetch("/api/admin/invite-code-limits", {
           method: "POST",
           credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            admin_limit: Math.max(0, Math.floor(adminLimit)),
-            teacher_limit: Math.max(0, Math.floor(teacherLimit)),
+            school: school,
+            school_limit: Math.max(0, Math.floor(schoolLimit)),
           }),
         })
           .then(function (r) {
@@ -671,8 +681,11 @@
               window.alert("Code-Lizenzen konnten nicht gespeichert werden.");
               return;
             }
-            loadInviteCodeLimits();
+            loadInviteCodeLimits(school);
           });
+      });
+      document.getElementById("code-limit-school").addEventListener("change", function () {
+        loadInviteCodeLimits((this.value || "").trim());
       });
 
       fetch("/api/me", { credentials: "same-origin" }).then(function (r) {

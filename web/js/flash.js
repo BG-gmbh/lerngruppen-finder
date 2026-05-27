@@ -21,6 +21,7 @@
     user_created: "Nutzer wurde angelegt.",
     setup_done: "Admin-Konto festgelegt. Du bist eingeloggt.",
     bad_invite: "Ungültiger oder bereits benutzter Code.",
+    code_limit: "Für diese Schule ist keine freie Lizenz verfügbar.",
     redeem_ok: "Konto erstellt. Willkommen!",
     bad_contact_email: "Bitte eine gültige E-Mail-Adresse eintragen.",
     notify_no_email: "Für Laden-Benachrichtigungen bitte eine E-Mail angeben oder die Option abwählen.",
