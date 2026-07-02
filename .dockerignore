@@ -1,0 +1,10 @@
+venv
+.venv
+.git
+__pycache__
+*.pyc
+users.db
+.env
+docs/node_modules
+flutter_app/build
+*.log
