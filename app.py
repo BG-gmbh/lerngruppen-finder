@@ -1029,8 +1029,11 @@ def setup_page():
     return send_from_directory(app.static_folder, "setup.html")
 
 
-@app.route("/setup", methods=["POST"])
+@app.route("/setup", methods=["GET", "POST"])
 def setup_create():
+    if request.method == "GET":
+        return redirect("/setup.html")
+
     db = get_db()
     if _admin_count(db) > 0:
         return redirect("/login.html?flash=setup_done")
