@@ -607,7 +607,7 @@
     }).then(function (res) {
       if (!res.ok) {
         if (res.data && res.data.error === "invalid_datetime") {
-          setLobbyError("Ungültiges Datum. Bitte Format YYYY-MM-DD HH:MM verwenden.");
+          setLobbyError("Ungueltiges Datum. Bitte Format YYYY-MM-DD HH:MM verwenden.");
         } else if (
           res.data &&
           (res.data.error === "empty_location" ||

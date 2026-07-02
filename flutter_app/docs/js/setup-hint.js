@@ -9,8 +9,9 @@
       if (data && data.setup_needed) {
         el.classList.remove("hidden");
         el.removeAttribute("aria-disabled");
-      } else {
-        el.classList.add("hidden");
+      } else if (el.tagName === "A") {
+        el.setAttribute("aria-disabled", "true");
+        el.title = "Nur verfügbar, wenn kein Admin existiert.";
       }
     })
     .catch(function () {});
