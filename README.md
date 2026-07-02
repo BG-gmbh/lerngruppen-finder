@@ -59,7 +59,7 @@ Im Netzwerk erreichbar (nicht nur localhost):
 ```bash
 cd /Users/admin/benjamin/lerngruppen-finder/flutter_app
 flutter pub get
-flutter run -d web-server --web-hostname grupp-ly.tech --web-port 8080 --dart-define=API_BASE_URL=http://127.0.0.1:5000
+flutter run -d web-server --web-hostname grup-py.tech --web-port 8080 --dart-define=API_BASE_URL=http://127.0.0.1:5000
 ```
 
 Android-Emulator:
