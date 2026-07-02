@@ -40,10 +40,10 @@ CHAT_VERIFIED_COLUMN = {
 CHAT_MAX_USERS = 5
 CHAT_BODY_MAX = 500
 CHAT_ROOM_SUFFIX_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
-AVATAR_UPLOAD_DIR = Path(__file__).resolve().parent / "web" / "uploads" / "avatars"
+AVATAR_UPLOAD_DIR = Path(__file__).resolve().parent / "docs" / "uploads" / "avatars"
 AVATAR_ALLOWED_EXTENSIONS = frozenset({"png", "jpg", "jpeg", "gif", "webp"})
 AVATAR_MAX_BYTES = 2 * 1024 * 1024
-app = Flask(__name__, static_folder="web", static_url_path="")
+app = Flask(__name__, static_folder="docs", static_url_path="")
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-nur-lokal-bitte-aendern")
 ALLOWED_ORIGINS = frozenset(
     origin.strip().rstrip("/")
