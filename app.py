@@ -3469,6 +3469,11 @@ def api_me():
     return jsonify(user)
 
 
+@app.route("/uploads/avatars/<path:filename>")
+def uploaded_avatar(filename):
+    return send_from_directory(str(AVATAR_UPLOAD_DIR), filename)
+
+
 from shop import register_shop_routes
 
 register_shop_routes(app, get_db, admin_api, login_required, login_required_api)
