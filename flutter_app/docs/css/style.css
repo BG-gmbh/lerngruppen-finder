@@ -306,6 +306,60 @@ a:hover {
   color: var(--muted);
 }
 
+.avatar-editor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.avatar-preview {
+  width: 96px;
+  height: 96px;
+  min-width: 96px;
+  border-radius: 24px;
+  background: rgba(61, 156, 245, 0.14);
+  border: 1px solid #2a3544;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  font-size: 1.75rem;
+  background-size: cover;
+  background-position: center;
+}
+
+.avatar-small {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  background: rgba(61, 156, 245, 0.14);
+  border: 1px solid #2a3544;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  font-size: 1rem;
+  background-size: cover;
+  background-position: center;
+}
+
+.avatar-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  flex: 1;
+  min-width: 200px;
+}
+
+.profile-head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
 .subject-row {
   display: flex;
   flex-direction: column;
