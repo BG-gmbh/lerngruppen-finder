@@ -3,3 +3,4 @@ Werkzeug==3.0.3
 python-dotenv==1.0.1
 gunicorn==21.2.0
 pysqlite3-binary==0.5.4
+anthropic==0.40.0

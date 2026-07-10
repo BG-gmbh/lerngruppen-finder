@@ -56,6 +56,16 @@ CHAT_ROOM_SUFFIX_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 AVATAR_UPLOAD_DIR = Path(__file__).resolve().parent / "flutter_app" / "docs" / "uploads" / "avatars"
 AVATAR_ALLOWED_EXTENSIONS = frozenset({"png", "jpg", "jpeg", "gif", "webp"})
 AVATAR_MAX_BYTES = 2 * 1024 * 1024
+# Zeugnis-Upload fuer das Onboarding (Claude-Vision-Auslesung).
+ZEUGNIS_ALLOWED_MEDIA = {
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "webp": "image/webp",
+    "gif": "image/gif",
+}
+ZEUGNIS_MAX_BYTES = 8 * 1024 * 1024
+ONBOARDING_MODEL = os.environ.get("ONBOARDING_MODEL", "claude-sonnet-5")
 STATIC_DIR = Path(__file__).resolve().parent / "flutter_app" / "docs"
 app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="")
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-nur-lokal-bitte-aendern")
@@ -203,9 +213,56 @@ def class_grade_number(class_name):
         return None
 
 
+# Ab welcher Klassenstufe ein Fach unterrichtet wird (vorgegebene Tabelle).
+# Unterhalb der Start-Stufe: "future" -> Fach wird gar nicht gezeigt.
+# Oberhalb der End-Stufe: "past" -> Fach wandert in den "Ausgeblendet"-Tab.
+SUBJECT_GRADE_START = {
+    "german": 1,
+    "math": 1,
+    "english": 3,
+    "biology": 5,
+    "spanish": 6,
+    "pgw": 7,
+    "art": 1,
+}
+SUBJECT_GRADE_END = {
+    "german": 13,
+    "math": 13,
+    "english": 13,
+    "biology": 13,
+    "spanish": 13,
+    "pgw": 13,
+    "art": 13,
+}
+
+
+def subject_visibility(grade, subject):
+    """'current' | 'future' | 'past' fuer ein Fach bei gegebener Klassenstufe."""
+    start = SUBJECT_GRADE_START.get(subject)
+    if start is None or grade is None:
+        return "current"
+    if grade < start:
+        return "future"
+    end = SUBJECT_GRADE_END.get(subject)
+    if end is not None and grade > end:
+        return "past"
+    return "current"
+
+
+def grade_to_level(grade):
+    """Deutsche Schulnote (1-6) -> Level. 1-2 = pro, 3-4 = medium, 5-6 = noob."""
+    try:
+        value = round(float(str(grade).replace(",", ".")))
+    except (TypeError, ValueError):
+        return None
+    if value <= 2:
+        return "pro"
+    if value <= 4:
+        return "medium"
+    return "noob"
+
+
 def user_may_access_subject(db, user_id, subject):
-    if subject != "pgw":
-        return True
     row = db.execute(
         "SELECT class_name, role FROM users WHERE id = ?",
         (user_id,),
@@ -216,7 +273,12 @@ def user_may_access_subject(db, user_id, subject):
     if role in ("teacher", "admin", "dev"):
         return True
     grade = class_grade_number(row["class_name"])
-    return grade is not None and grade >= 9
+    if grade is None:
+        # Ohne bekannte Klassenstufe nicht sperren (z. B. Altbestand).
+        return True
+    # Zukuenftige Faecher (Stufe noch nicht erreicht) sind gesperrt;
+    # aktuelle und vergangene ("Ausgeblendet") bleiben zugaenglich.
+    return subject_visibility(grade, subject) != "future"
 
 
 def next_pro_verification_values(row, levels):
@@ -377,6 +439,10 @@ def _ensure_display_name_column(db):
     if "display_name" not in names:
         db.execute(
             "ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''"
+        )
+    if "onboarded" not in names:
+        db.execute(
+            "ALTER TABLE users ADD COLUMN onboarded INTEGER NOT NULL DEFAULT 0"
         )
     db.commit()
 
@@ -3078,7 +3144,7 @@ def login():
 def _public_user_payload(db, user_id):
     row = db.execute(
         """
-        SELECT username, display_name, role, school, class_name,
+        SELECT username, display_name, onboarded, role, school, class_name,
                level_german, level_math, level_english, level_biology,
                level_pgw, level_spanish, level_art,
                pro_verified_german, pro_verified_math, pro_verified_english,
@@ -3093,10 +3159,23 @@ def _public_user_payload(db, user_id):
     if row is None:
         return None
     role = row["role"] if row["role"] in ROLES else "user"
+    grade = class_grade_number(row["class_name"])
+    subjects = [
+        {
+            "key": subject,
+            "label": CHAT_SUBJECT_LABELS[subject],
+            "level": row[CHAT_LEVEL_COLUMN[subject]],
+            "visibility": subject_visibility(grade, subject),
+        }
+        for subject in CHAT_SUBJECT_ORDER
+    ]
     return {
         "user_id": user_id,
         "username": row["username"],
         "display_name": row["display_name"] or "",
+        "onboarded": bool(row["onboarded"]),
+        "grade": grade,
+        "subjects": subjects,
         "role": role,
         "school": row["school"] or "",
         "class_name": row["class_name"] or "",
@@ -3542,6 +3621,173 @@ def api_profile_name():
     )
     db.commit()
     return jsonify(ok=True, display_name=name)
+
+
+def _extract_zeugnis(image_bytes, media_type):
+    """Liest ein Zeugnisbild per Claude Vision aus.
+
+    Gibt ein Dict {display_name, class_name, school, grades:{fach: note}} zurueck.
+    Wirft RuntimeError('no_api_key') bzw. RuntimeError('ai_failed').
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("no_api_key")
+    try:
+        import base64
+        import anthropic
+    except ImportError:
+        raise RuntimeError("ai_failed")
+
+    grade_props = {
+        subject: {
+            "type": ["number", "null"],
+            "description": f"Zeugnisnote (deutsche Skala 1-6) fuer {label}, sonst null.",
+        }
+        for subject, label in CHAT_SUBJECT_LABELS.items()
+    }
+    tool = {
+        "name": "zeugnis_daten",
+        "description": "Strukturierte Daten aus einem deutschen Schulzeugnis.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": ["string", "null"],
+                    "description": "Voller Name der Schuelerin/des Schuelers.",
+                },
+                "class_name": {
+                    "type": ["string", "null"],
+                    "description": "Klasse, z. B. '8a' oder '10'.",
+                },
+                "school": {
+                    "type": ["string", "null"],
+                    "description": "Name der Schule.",
+                },
+                "grades": {
+                    "type": "object",
+                    "properties": grade_props,
+                },
+            },
+            "required": ["grades"],
+        },
+    }
+
+    client = anthropic.Anthropic(api_key=api_key)
+    b64 = base64.standard_b64encode(image_bytes).decode("ascii")
+    try:
+        msg = client.messages.create(
+            model=ONBOARDING_MODEL,
+            max_tokens=1024,
+            tools=[tool],
+            tool_choice={"type": "tool", "name": "zeugnis_daten"},
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": b64,
+                            },
+                        },
+                        {
+                            "type": "text",
+                            "text": (
+                                "Lies dieses deutsche Schulzeugnis aus. Gib Name, Klasse, "
+                                "Schule und die Noten der folgenden Faecher zurueck: "
+                                + ", ".join(CHAT_SUBJECT_LABELS.values())
+                                + ". Verwende die deutsche Notenskala 1 (sehr gut) bis 6 "
+                                "(ungenuegend). Fehlt eine Note oder ein Fach, setze null."
+                            ),
+                        },
+                    ],
+                }
+            ],
+        )
+    except Exception:
+        raise RuntimeError("ai_failed")
+
+    for block in msg.content:
+        if getattr(block, "type", None) == "tool_use" and block.name == "zeugnis_daten":
+            return block.input
+    raise RuntimeError("ai_failed")
+
+
+@app.route("/api/onboarding/zeugnis", methods=["POST"])
+def api_onboarding_zeugnis():
+    if not _load_api_auth_context():
+        return jsonify(error="unauthorized"), 401
+    f = request.files.get("zeugnis")
+    if f is None or not f.filename:
+        return jsonify(error="no_file"), 400
+    ext = f.filename.rsplit(".", 1)[-1].lower() if "." in f.filename else ""
+    media_type = ZEUGNIS_ALLOWED_MEDIA.get(ext)
+    if media_type is None:
+        return jsonify(error="bad_type"), 400
+    data = f.read(ZEUGNIS_MAX_BYTES + 1)
+    if not data or len(data) > ZEUGNIS_MAX_BYTES:
+        return jsonify(error="too_large"), 400
+
+    try:
+        extracted = _extract_zeugnis(data, media_type)
+    except RuntimeError as exc:
+        code = "ai_unavailable" if str(exc) == "no_api_key" else "ai_failed"
+        status = 503 if code == "ai_unavailable" else 502
+        return jsonify(error=code), status
+
+    grades = (extracted or {}).get("grades") or {}
+    levels = {}
+    for subject in CHAT_SUBJECT_ORDER:
+        level = grade_to_level(grades.get(subject))
+        levels[subject] = level or "noob"
+    return jsonify(
+        ok=True,
+        display_name=(extracted.get("display_name") or "").strip(),
+        class_name=normalize_class_name(extracted.get("class_name")) or "",
+        school=_normalize_school_name(extracted.get("school")) or "",
+        grades={s: grades.get(s) for s in CHAT_SUBJECT_ORDER},
+        levels=levels,
+    )
+
+
+@app.route("/api/onboarding/confirm", methods=["POST"])
+def api_onboarding_confirm():
+    if not _load_api_auth_context():
+        return jsonify(error="unauthorized"), 401
+    data = request.get_json(silent=True) or {}
+    name = " ".join((data.get("display_name") or "").split())
+    if len(name) < 1 or len(name) > 64:
+        return jsonify(error="invalid_name"), 400
+    class_name = normalize_class_name(data.get("class_name"))
+    if class_name is None:
+        return jsonify(error="invalid_class"), 400
+    school = _normalize_school_name(data.get("school"))
+    if school is None:
+        return jsonify(error="invalid_school"), 400
+    levels_in = data.get("levels") or {}
+    levels = {}
+    for subject in CHAT_SUBJECT_ORDER:
+        level = levels_in.get(subject)
+        levels[subject] = level if level in LEVELS else "noob"
+
+    db = get_db()
+    set_cols = ", ".join(f"{CHAT_LEVEL_COLUMN[s]} = ?" for s in CHAT_SUBJECT_ORDER)
+    params = [levels[s] for s in CHAT_SUBJECT_ORDER]
+    params.extend([name, class_name, school, session["user_id"]])
+    db.execute(
+        f"""
+        UPDATE users
+        SET {set_cols},
+            display_name = ?, class_name = ?, school = ?, onboarded = 1
+        WHERE id = ?
+        """,
+        params,
+    )
+    db.commit()
+    session["school"] = school
+    return jsonify(ok=True)
 
 
 @app.route("/api/me")

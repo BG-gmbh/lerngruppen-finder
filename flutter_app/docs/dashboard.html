@@ -37,7 +37,15 @@
         <h1>Hallo, <span id="welcome-name">…</span></h1>
       </div>
       <p id="class-summary" class="level-summary muted"></p>
-      <p id="level-summary" class="level-summary muted"></p>
+
+      <div id="subjects-block" style="margin-top:1rem;">
+        <div class="tab-row" role="tablist">
+          <button type="button" id="tab-current" class="btn btn-small tab-btn" role="tab" aria-selected="true">Aktuelle Fächer</button>
+          <button type="button" id="tab-hidden" class="btn btn-small btn-secondary tab-btn" role="tab" aria-selected="false">Ausgeblendet <span id="tab-hidden-count"></span></button>
+        </div>
+        <ul id="subjects-current" class="subject-chips" role="tabpanel"></ul>
+        <ul id="subjects-hidden" class="subject-chips hidden" role="tabpanel"></ul>
+      </div>
       <p class="muted" style="margin-top:1rem;">
         <a href="/laden.html">Laden</a> — Angebote und Materialien vom Team.
       </p>
@@ -71,18 +79,46 @@
     </section>
   </main>
 
-  <div id="name-onboarding" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="name-onboarding-title">
+  <div id="onboarding" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
     <div class="modal-card">
-      <h2 id="name-onboarding-title" class="modal-title">Willkommen! 🎉</h2>
-      <p class="field-hint modal-hint">Bevor es losgeht: Wie heißt du? Dieser Name wird anderen angezeigt.</p>
-      <form id="name-onboarding-form" autocomplete="off">
-        <div class="modal-field">
-          <label for="name-onboarding-input">Dein Name</label>
-          <input id="name-onboarding-input" class="modal-input" name="display_name" type="text" required minlength="1" maxlength="64" placeholder="z. B. Alex" autocomplete="name">
-          <p id="name-onboarding-error" class="field-hint modal-hint" style="color:#ef476f;display:none;">Bitte gib einen Namen ein.</p>
-        </div>
-        <button type="submit" class="btn btn-block">Weiter</button>
-      </form>
+      <h2 id="onboarding-title" class="modal-title">Willkommen! 🎉</h2>
+
+      <!-- Schritt 1: Zeugnis hochladen -->
+      <div id="onboarding-step-upload">
+        <p class="field-hint modal-hint">Lad zum Start dein <strong>Zeugnis</strong> als Foto hoch. Daraus lesen wir Name, Klasse, Schule und deine Fach-Stufen aus.</p>
+        <form id="onboarding-upload-form" autocomplete="off">
+          <div class="modal-field">
+            <label for="onboarding-file">Zeugnis (Foto)</label>
+            <input id="onboarding-file" class="modal-input" name="zeugnis" type="file" accept="image/png,image/jpeg,image/webp,image/gif" required>
+            <p class="field-hint modal-hint">png, jpg, jpeg, webp, gif · max. 8 MB.</p>
+          </div>
+          <p id="onboarding-upload-error" class="field-hint modal-hint" style="color:#ef476f;display:none;"></p>
+          <button id="onboarding-upload-btn" type="submit" class="btn btn-block">Zeugnis auslesen</button>
+          <button id="onboarding-manual-btn" type="button" class="btn btn-ghost btn-block" style="margin-top:.5rem;">Ohne Zeugnis manuell eintragen</button>
+        </form>
+      </div>
+
+      <!-- Schritt 2: Prüfen & bestätigen -->
+      <div id="onboarding-step-confirm" class="hidden">
+        <p class="field-hint modal-hint">Bitte prüfen und, falls nötig, korrigieren. Dann bestätigen.</p>
+        <form id="onboarding-confirm-form" autocomplete="off">
+          <div class="modal-field">
+            <label for="onboarding-name">Name</label>
+            <input id="onboarding-name" class="modal-input" type="text" required minlength="1" maxlength="64" placeholder="z. B. Alex Muster">
+          </div>
+          <div class="modal-field">
+            <label for="onboarding-class">Klasse</label>
+            <input id="onboarding-class" class="modal-input" type="text" required maxlength="20" placeholder="z. B. 8a">
+          </div>
+          <div class="modal-field">
+            <label for="onboarding-school">Schule</label>
+            <input id="onboarding-school" class="modal-input" type="text" maxlength="120" placeholder="z. B. Stadtteilschule Mitte">
+          </div>
+          <fieldset class="subject-levels subject-levels-plain" id="onboarding-levels"></fieldset>
+          <p id="onboarding-confirm-error" class="field-hint modal-hint" style="color:#ef476f;display:none;"></p>
+          <button type="submit" class="btn btn-block">Bestätigen</button>
+        </form>
+      </div>
     </div>
   </div>
 
@@ -97,21 +133,12 @@
     }
 
     function setSummary(data) {
-      var el = document.getElementById("level-summary");
-      if (!el || !data) return;
+      if (!data) return;
       var classEl = document.getElementById("class-summary");
       if (classEl) {
         classEl.textContent = data.class_name ? "Klasse: " + data.class_name : "Keine Klasse festgelegt";
       }
-      el.textContent = [
-        "Deutsch: " + labelLevel(data.level_german),
-        "Mathe: " + labelLevel(data.level_math),
-        "Englisch: " + labelLevel(data.level_english),
-        "Biologie: " + labelLevel(data.level_biology),
-        "PGW: " + labelLevel(data.level_pgw),
-        "Spanisch: " + labelLevel(data.level_spanish),
-        "Kunst: " + labelLevel(data.level_art),
-      ].join(" · ");
+      renderSubjects(data);
       var avatar = document.getElementById("dashboard-avatar");
       if (avatar) {
         if (data.avatar_url) {
@@ -122,6 +149,64 @@
         }
       }
     }
+
+    function levelClass(v) {
+      if (v === "pro") return "chip-pro";
+      if (v === "medium") return "chip-medium";
+      return "chip-noob";
+    }
+
+    function renderSubjects(data) {
+      var cur = document.getElementById("subjects-current");
+      var hid = document.getElementById("subjects-hidden");
+      if (!cur || !hid) return;
+      cur.innerHTML = "";
+      hid.innerHTML = "";
+      var subjects = data.subjects || [];
+      var hiddenCount = 0;
+      subjects.forEach(function (s) {
+        // "future" = Fach noch nicht erreicht -> gar nicht anzeigen.
+        if (s.visibility === "future") return;
+        var li = document.createElement("li");
+        li.className = "subject-chip " + levelClass(s.level);
+        li.innerHTML = "<span class=\"chip-name\">" + esc(s.label) +
+          "</span><span class=\"chip-level\">" + labelLevel(s.level) + "</span>";
+        if (s.visibility === "past") {
+          hid.appendChild(li);
+          hiddenCount++;
+        } else {
+          cur.appendChild(li);
+        }
+      });
+      if (!cur.children.length) {
+        var e = document.createElement("li");
+        e.className = "muted";
+        e.textContent = "Keine aktuellen Fächer.";
+        cur.appendChild(e);
+      }
+      var badge = document.getElementById("tab-hidden-count");
+      if (badge) badge.textContent = hiddenCount ? "(" + hiddenCount + ")" : "";
+      var hiddenTab = document.getElementById("tab-hidden");
+      if (hiddenTab) hiddenTab.style.display = hiddenCount ? "" : "none";
+    }
+
+    (function () {
+      var tc = document.getElementById("tab-current");
+      var th = document.getElementById("tab-hidden");
+      var pc = document.getElementById("subjects-current");
+      var ph = document.getElementById("subjects-hidden");
+      if (!tc || !th || !pc || !ph) return;
+      function show(currentActive) {
+        pc.classList.toggle("hidden", !currentActive);
+        ph.classList.toggle("hidden", currentActive);
+        tc.setAttribute("aria-selected", currentActive ? "true" : "false");
+        th.setAttribute("aria-selected", currentActive ? "false" : "true");
+        tc.classList.toggle("btn-secondary", !currentActive);
+        th.classList.toggle("btn-secondary", currentActive);
+      }
+      tc.addEventListener("click", function () { show(true); });
+      th.addEventListener("click", function () { show(false); });
+    })();
 
     function esc(s) {
       var d = document.createElement("div");
@@ -206,63 +291,147 @@
         }
         setSummary(data);
         loadPlaces();
-        // Beim ersten Login ist noch kein Name gesetzt -> Pflicht-Dialog zeigen.
-        if (!data.display_name) {
-          showNameOnboarding();
+        // Beim ersten Login noch nicht onboarded -> Zeugnis-Pflicht-Dialog.
+        // Nur für Schüler:innen; Lehrkräfte/Admins haben kein solches Zeugnis.
+        if (!data.onboarded && data.role === "user") {
+          showOnboarding();
         }
       });
 
-    function showNameOnboarding() {
-      var overlay = document.getElementById("name-onboarding");
-      var input = document.getElementById("name-onboarding-input");
-      var error = document.getElementById("name-onboarding-error");
-      var form = document.getElementById("name-onboarding-form");
-      if (!overlay || !form) return;
-      overlay.classList.remove("hidden");
-      if (input) {
-        try { input.focus(); } catch (e) {}
-      }
+    var SUBJECTS = [
+      ["german", "Deutsch"], ["math", "Mathe"], ["english", "Englisch"],
+      ["biology", "Biologie"], ["pgw", "PGW"], ["spanish", "Spanisch"], ["art", "Kunst"],
+    ];
 
-      form.addEventListener("submit", function (e) {
+    function buildLevelInputs(levels) {
+      var box = document.getElementById("onboarding-levels");
+      box.innerHTML = "<legend>Deine Fach-Stufen</legend>";
+      SUBJECTS.forEach(function (pair) {
+        var key = pair[0], label = pair[1];
+        var val = (levels && levels[key]) || "noob";
+        var row = document.createElement("div");
+        row.className = "subject-row";
+        row.innerHTML = "<span class=\"subject-name\">" + label + "</span>" +
+          "<div class=\"radio-row\">" +
+          ["pro", "medium", "noob"].map(function (lv) {
+            var txt = lv === "pro" ? "Pro" : lv === "medium" ? "Mittel" : "Noob";
+            return "<label class=\"radio-pill\"><input type=\"radio\" name=\"lvl_" + key +
+              "\" value=\"" + lv + "\"" + (val === lv ? " checked" : "") + "><span>" + txt + "</span></label>";
+          }).join("") + "</div>";
+        box.appendChild(row);
+      });
+    }
+
+    function showConfirmStep(extracted) {
+      document.getElementById("onboarding-step-upload").classList.add("hidden");
+      document.getElementById("onboarding-step-confirm").classList.remove("hidden");
+      document.getElementById("onboarding-name").value = (extracted && extracted.display_name) || "";
+      document.getElementById("onboarding-class").value = (extracted && extracted.class_name) || "";
+      document.getElementById("onboarding-school").value = (extracted && extracted.school) || "";
+      buildLevelInputs(extracted && extracted.levels);
+    }
+
+    function showOnboarding() {
+      var overlay = document.getElementById("onboarding");
+      if (!overlay) return;
+      overlay.classList.remove("hidden");
+
+      var uploadForm = document.getElementById("onboarding-upload-form");
+      var uploadErr = document.getElementById("onboarding-upload-error");
+      var uploadBtn = document.getElementById("onboarding-upload-btn");
+      var fileInput = document.getElementById("onboarding-file");
+
+      uploadForm.addEventListener("submit", function (e) {
         e.preventDefault();
-        var name = (input.value || "").trim();
-        if (!name) {
-          if (error) error.style.display = "block";
-          return;
-        }
-        if (error) error.style.display = "none";
-        var btn = form.querySelector("button[type=submit]");
+        var file = fileInput.files && fileInput.files[0];
+        if (!file) { uploadErr.textContent = "Bitte ein Zeugnis auswählen."; uploadErr.style.display = "block"; return; }
+        uploadErr.style.display = "none";
+        uploadBtn.disabled = true;
+        uploadBtn.textContent = "Wird ausgelesen …";
+        var fd = new FormData();
+        fd.append("zeugnis", file);
+        fetch("/api/onboarding/zeugnis", { method: "POST", credentials: "include", body: fd })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+          .then(function (res) {
+            uploadBtn.disabled = false;
+            uploadBtn.textContent = "Zeugnis auslesen";
+            if (!res.ok) {
+              var msg = res.d && res.d.error === "ai_unavailable"
+                ? "Automatische Auslesung ist gerade nicht verfügbar. Bitte manuell eintragen."
+                : res.d && res.d.error === "too_large" ? "Datei zu groß (max. 8 MB)."
+                : res.d && res.d.error === "bad_type" ? "Dateityp nicht unterstützt."
+                : "Auslesen fehlgeschlagen. Bitte manuell eintragen.";
+              uploadErr.textContent = msg;
+              uploadErr.style.display = "block";
+              // Trotzdem manuell weitermachen lassen.
+              showConfirmStep(null);
+              return;
+            }
+            showConfirmStep(res.d);
+          })
+          .catch(function () {
+            uploadBtn.disabled = false;
+            uploadBtn.textContent = "Zeugnis auslesen";
+            uploadErr.textContent = "Auslesen fehlgeschlagen. Bitte manuell eintragen.";
+            uploadErr.style.display = "block";
+            showConfirmStep(null);
+          });
+      });
+
+      document.getElementById("onboarding-manual-btn").addEventListener("click", function () {
+        showConfirmStep(null);
+      });
+
+      var confirmForm = document.getElementById("onboarding-confirm-form");
+      var confirmErr = document.getElementById("onboarding-confirm-error");
+      confirmForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var name = (document.getElementById("onboarding-name").value || "").trim();
+        var klass = (document.getElementById("onboarding-class").value || "").trim();
+        if (!name) { confirmErr.textContent = "Bitte einen Namen eintragen."; confirmErr.style.display = "block"; return; }
+        if (!klass) { confirmErr.textContent = "Bitte eine Klasse eintragen."; confirmErr.style.display = "block"; return; }
+        confirmErr.style.display = "none";
+        var levels = {};
+        SUBJECTS.forEach(function (pair) {
+          var sel = confirmForm.querySelector("input[name=\"lvl_" + pair[0] + "\"]:checked");
+          levels[pair[0]] = sel ? sel.value : "noob";
+        });
+        var btn = confirmForm.querySelector("button[type=submit]");
         if (btn) btn.disabled = true;
-        fetch("/api/profile/name", {
+        fetch("/api/onboarding/confirm", {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ display_name: name }),
+          body: JSON.stringify({
+            display_name: name,
+            class_name: klass,
+            school: (document.getElementById("onboarding-school").value || "").trim(),
+            levels: levels,
+          }),
         })
-          .then(function (r) {
-            return r.json().then(function (d) { return { ok: r.ok, d: d }; });
-          })
-          .then(function (result) {
-            if (!result.ok) {
-              if (error) {
-                error.textContent = "Name konnte nicht gespeichert werden.";
-                error.style.display = "block";
-              }
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+          .then(function (res) {
+            if (!res.ok) {
+              confirmErr.textContent = res.d && res.d.error === "invalid_class"
+                ? "Bitte eine gültige Klasse eintragen." : "Speichern fehlgeschlagen.";
+              confirmErr.style.display = "block";
               if (btn) btn.disabled = false;
               return;
             }
-            var saved = result.d.display_name || name;
-            document.getElementById("welcome-name").textContent = saved;
             overlay.classList.add("hidden");
-            if (typeof window.launchConfetti === "function") {
-              window.launchConfetti();
-            }
+            if (typeof window.launchConfetti === "function") window.launchConfetti();
+            // Frische Daten laden, damit Fächer/Tabs stimmen.
+            fetch("/api/me", { credentials: "include" })
+              .then(function (r) { return r.json(); })
+              .then(function (d) {
+                if (!d || !d.username) return;
+                document.getElementById("welcome-name").textContent = d.display_name || d.username;
+                setSummary(d);
+              });
           })
           .catch(function () {
-            if (error) {
-              error.textContent = "Name konnte nicht gespeichert werden.";
-              error.style.display = "block";
-            }
+            confirmErr.textContent = "Speichern fehlgeschlagen.";
+            confirmErr.style.display = "block";
             if (btn) btn.disabled = false;
           });
       });

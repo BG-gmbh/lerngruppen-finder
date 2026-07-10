@@ -860,3 +860,45 @@ a:hover {
   justify-content: flex-end;
   gap: 0.75rem;
 }
+
+/* Fächer-Tabs + Chips (Dashboard) */
+.tab-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+.tab-btn[aria-selected="true"] {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.subject-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.subject-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid #2a3544;
+  font-size: 0.9rem;
+}
+.subject-chip .chip-name {
+  font-weight: 600;
+}
+.subject-chip .chip-level {
+  font-size: 0.78rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  color: #081018;
+}
+.chip-pro .chip-level { background: var(--success); }
+.chip-medium .chip-level { background: var(--warning); }
+.chip-noob .chip-level { background: var(--muted); }
