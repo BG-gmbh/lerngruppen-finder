@@ -280,40 +280,22 @@ def _ensure_subject_columns(db):
     db.commit()
 
 
-def _database_has_data():
-    """True, wenn unter DATABASE bereits eine benutzbare DB mit Nutzdaten liegt."""
-    if not os.path.isfile(DATABASE) or os.path.getsize(DATABASE) == 0:
-        return False
-    try:
-        with closing(sqlite3.connect(DATABASE)) as db:
-            if str(db.execute("PRAGMA quick_check").fetchone()[0]).lower() != "ok":
-                return False
-            row = db.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
-            ).fetchone()
-            if row is None:
-                return False
-            return db.execute("SELECT COUNT(*) FROM users").fetchone()[0] > 0
-    except sqlite3.Error:
-        return False
-
-
 def seed_db_if_empty():
-    """Spielt den committeten Seed-Snapshot einmalig ein, wenn noch keine DB da ist.
+    """Spielt den committeten Seed-Snapshot NUR ein, wenn noch gar keine DB da ist.
 
     Gedacht fuer den Betrieb mit persistenter Disk (Render): beim allerersten
-    Start ist die Disk leer -> die DB wird mit dem Stand aus seed.db befuellt.
-    Bei allen weiteren Deploys bleiben die auf der Disk gespeicherten, echten
-    Daten erhalten und werden NICHT ueberschrieben.
+    Start ist die Disk leer -> die DB wird einmalig mit dem Stand aus seed.db
+    befuellt. Sobald eine DB-Datei existiert, wird sie bei keinem Deploy jemals
+    ueberschrieben - die gespeicherten Daten bleiben unangetastet.
     """
     if os.environ.get("SEED_DB_IF_EMPTY", "").lower() not in ("1", "true", "yes"):
         return
     if not os.path.isfile(SEED_DATABASE):
         return
-    if _database_has_data():
+    # Existiert bereits eine (nicht-leere) DB-Datei? Dann NICHTS anfassen.
+    if os.path.isfile(DATABASE) and os.path.getsize(DATABASE) > 0:
         return
     _ensure_database_path()
-    # Evtl. vorhandene leere Datei + WAL-/SHM-Reste wegraeumen.
     for path in (DATABASE, DATABASE + "-wal", DATABASE + "-shm"):
         if os.path.isfile(path):
             try:

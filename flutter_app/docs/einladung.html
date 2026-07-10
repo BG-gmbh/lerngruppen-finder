@@ -1,15 +1,63 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Einladung — Lerngruppen Finder</title>
-  <link rel="stylesheet" href="css/style.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Einladungscode — lerngruppen finder</title>
+  <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-  <main>
-    <h1>Einladung</h1>
-    <p>Einladungsseite.</p>
+  <header class="site-header">
+    <a class="logo" href="/">lerngruppen finder</a>
+    <nav>
+      <span id="nav-guest">
+        <a href="/login.html">Login</a>
+        <a href="/laden.html" class="btn btn-small btn-secondary">Laden</a>
+        <a href="/einladung.html" class="btn btn-small">Einladungscode</a>
+      </span>
+      <span id="nav-user" class="hidden" style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+        <span class="nav-user" id="nav-username"></span>
+        <a href="/dashboard.html" class="btn btn-small">Dashboard</a>
+        <a href="/laden.html" class="btn btn-small btn-secondary">Laden</a>
+        <a href="/chat.html" class="btn btn-small btn-secondary">Chat</a>
+        <a href="/settings.html" class="btn btn-small btn-secondary">Einstellungen</a>
+        <form class="inline-form" action="/logout" method="post">
+          <button type="submit" class="btn btn-ghost">Logout</button>
+        </form>
+      </span>
+    </nav>
+  </header>
+
+  <main class="container">
+    <ul id="flash-banner"></ul>
+    <section class="card">
+      <h1>Mit Einladungscode registrieren</h1>
+      <p class="field-hint">Du hast einen Code von deiner Lehrkraft oder dem Admin bekommen? Gib ihn hier ein und leg dein Konto an.</p>
+      <form method="post" action="/einladung" class="stack-form" autocomplete="on">
+        <label>
+          Einladungscode
+          <input name="code" type="text" required autocomplete="off" placeholder="z. B. ABCD-1234" autocapitalize="characters">
+        </label>
+        <label>
+          Benutzername
+          <input name="username" type="text" required minlength="3" maxlength="64" autocomplete="username">
+        </label>
+        <label>
+          Passwort
+          <input name="password" type="password" required minlength="6" autocomplete="new-password">
+        </label>
+        <label>
+          Passwort bestätigen
+          <input name="password_confirm" type="password" required minlength="6" autocomplete="new-password">
+        </label>
+        <button type="submit" class="btn btn-block">Konto erstellen</button>
+      </form>
+      <p class="muted">Schon ein Konto? <a href="/login.html">Zum Login</a></p>
+    </section>
   </main>
+  <script src="/js/config.js"></script>
+  <script src="/js/flash.js"></script>
+  <script src="/js/nav.js"></script>
+  <script src="/js/form-handler.js"></script>
 </body>
 </html>

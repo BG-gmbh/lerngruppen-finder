@@ -2,8 +2,8 @@ zeugnis hochladen knopf
 e-mail verbindlich
 totoriol
 fächer chat pro text
-name pflich eingabe nach login
 code stadt name
-einmal einlog effect
 smily nach name im einlog screen
 mehr KI
+Fach-Level mit zeugnis bestatigen per bild uplode und uberprufung ses namens
+die db soll nicht uberscheiben werden

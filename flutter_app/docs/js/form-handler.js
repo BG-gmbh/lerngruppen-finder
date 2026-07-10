@@ -1,5 +1,5 @@
 (function () {
-  var supportedActions = ["/login", "/register", "/setup", "/profile", "/logout"];
+  var supportedActions = ["/login", "/register", "/setup", "/profile", "/logout", "/einladung"];
   function normalizeAction(action) {
     if (!action) return "";
     var text = String(action).trim();
