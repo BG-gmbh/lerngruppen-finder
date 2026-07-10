@@ -33,14 +33,16 @@
   }
 
   function api(path, opts) {
+    var cfg = window.APP_CONFIG || {};
+    var basePath = typeof cfg.resolveApiUrl === "function" ? cfg.resolveApiUrl(path) : path;
     opts = opts || {};
-    opts.credentials = "same-origin";
+    opts.credentials = "include";
     opts.headers = opts.headers || {};
     if (opts.body && typeof opts.body === "object" && !(opts.body instanceof FormData)) {
       opts.headers["Content-Type"] = "application/json";
       opts.body = JSON.stringify(opts.body);
     }
-    return fetch(path, opts).then(function (r) {
+    return fetch(basePath, opts).then(function (r) {
       return r.json().then(function (data) {
         return { ok: r.ok, status: r.status, data: data };
       });

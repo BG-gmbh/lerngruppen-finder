@@ -1,5 +1,7 @@
 (function () {
-  fetch("/api/setup-status")
+  var cfg = window.APP_CONFIG || {};
+  var apiUrl = typeof cfg.resolveApiUrl === "function" ? cfg.resolveApiUrl("/api/setup-status") : "/api/setup-status";
+  fetch(apiUrl, { credentials: "include" })
     .then(function (r) {
       return r.json();
     })

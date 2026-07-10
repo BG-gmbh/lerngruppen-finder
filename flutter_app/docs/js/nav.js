@@ -3,7 +3,10 @@
   var user = document.getElementById("nav-user");
   if (!guest || !user) return;
 
-  fetch("/api/me", { credentials: "same-origin" })
+  var cfg = window.APP_CONFIG || {};
+  var apiUrl = typeof cfg.resolveApiUrl === "function" ? cfg.resolveApiUrl("/api/me") : "/api/me";
+
+  fetch(apiUrl, { credentials: "include" })
     .then(function (r) {
       if (!r.ok) throw new Error();
       return r.json();
