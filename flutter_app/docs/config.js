@@ -1,6 +1,6 @@
 (function () {
   var cfg = window.APP_CONFIG || {};
-  var defaultApiBase = "https://api.group-ly.tech";
+  var defaultApiBase = "https://lerngruppen-finder.onrender.com";
   cfg.apiBaseUrl = cfg.apiBaseUrl || defaultApiBase;
 
   function normalizeBase(value) {
