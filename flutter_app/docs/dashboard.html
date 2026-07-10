@@ -70,8 +70,25 @@
       <ul id="place-list" class="code-list place-list"></ul>
     </section>
   </main>
+
+  <div id="name-onboarding" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="name-onboarding-title">
+    <div class="modal-card">
+      <h2 id="name-onboarding-title" class="modal-title">Willkommen! 🎉</h2>
+      <p class="field-hint modal-hint">Bevor es losgeht: Wie heißt du? Dieser Name wird anderen angezeigt.</p>
+      <form id="name-onboarding-form" autocomplete="off">
+        <div class="modal-field">
+          <label for="name-onboarding-input">Dein Name</label>
+          <input id="name-onboarding-input" class="modal-input" name="display_name" type="text" required minlength="1" maxlength="64" placeholder="z. B. Alex" autocomplete="name">
+          <p id="name-onboarding-error" class="field-hint modal-hint" style="color:#ef476f;display:none;">Bitte gib einen Namen ein.</p>
+        </div>
+        <button type="submit" class="btn btn-block">Weiter</button>
+      </form>
+    </div>
+  </div>
+
   <script src="/js/config.js"></script>
   <script src="/js/flash.js"></script>
+  <script src="/js/confetti.js"></script>
   <script>
     function labelLevel(v) {
       if (v === "pro") return "Pro";
@@ -180,7 +197,7 @@
       })
       .then(function (data) {
         if (!data || !data.username) return;
-        document.getElementById("welcome-name").textContent = data.username;
+        document.getElementById("welcome-name").textContent = data.display_name || data.username;
         var navName = document.getElementById("nav-username");
         if (navName) navName.textContent = data.username;
         if (data.role === "teacher" || data.role === "admin" || data.role === "dev") {
@@ -189,7 +206,67 @@
         }
         setSummary(data);
         loadPlaces();
+        // Beim ersten Login ist noch kein Name gesetzt -> Pflicht-Dialog zeigen.
+        if (!data.display_name) {
+          showNameOnboarding();
+        }
       });
+
+    function showNameOnboarding() {
+      var overlay = document.getElementById("name-onboarding");
+      var input = document.getElementById("name-onboarding-input");
+      var error = document.getElementById("name-onboarding-error");
+      var form = document.getElementById("name-onboarding-form");
+      if (!overlay || !form) return;
+      overlay.classList.remove("hidden");
+      if (input) {
+        try { input.focus(); } catch (e) {}
+      }
+
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var name = (input.value || "").trim();
+        if (!name) {
+          if (error) error.style.display = "block";
+          return;
+        }
+        if (error) error.style.display = "none";
+        var btn = form.querySelector("button[type=submit]");
+        if (btn) btn.disabled = true;
+        fetch("/api/profile/name", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ display_name: name }),
+        })
+          .then(function (r) {
+            return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+          })
+          .then(function (result) {
+            if (!result.ok) {
+              if (error) {
+                error.textContent = "Name konnte nicht gespeichert werden.";
+                error.style.display = "block";
+              }
+              if (btn) btn.disabled = false;
+              return;
+            }
+            var saved = result.d.display_name || name;
+            document.getElementById("welcome-name").textContent = saved;
+            overlay.classList.add("hidden");
+            if (typeof window.launchConfetti === "function") {
+              window.launchConfetti();
+            }
+          })
+          .catch(function () {
+            if (error) {
+              error.textContent = "Name konnte nicht gespeichert werden.";
+              error.style.display = "block";
+            }
+            if (btn) btn.disabled = false;
+          });
+      });
+    }
   </script>
 </body>
 </html>

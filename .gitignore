@@ -2,7 +2,6 @@ venv/
 .venv/
 __pycache__/
 *.py[cod]
-users.db
 .env
 flutter_app/.dart_tool/
 flutter_app/build/

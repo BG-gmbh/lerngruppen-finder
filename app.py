@@ -29,9 +29,8 @@ elif os.access(os.path.dirname(default_database_path) or ".", os.W_OK):
 else:
     DATABASE = "/tmp/lerngruppen-finder/users.db"
 
-# Snapshot der DB, der bei jedem Deploy den Laufzeit-Zustand wiederherstellt.
-# Nur aktiv, wenn RESET_DB_FROM_SEED gesetzt ist (auf Render), damit lokal
-# nichts ueberschrieben wird.
+# Einmaliger Start-Snapshot der DB. Wird nur eingespielt, wenn die (persistente)
+# DB noch leer ist; danach bleiben die echten Daten ueber Deploys hinweg erhalten.
 SEED_DATABASE = os.path.join(os.path.dirname(__file__), "seed.db")
 LEVELS = frozenset({"pro", "medium", "noob"})
 ROLES = frozenset({"dev", "admin", "teacher", "user"})
@@ -281,26 +280,44 @@ def _ensure_subject_columns(db):
     db.commit()
 
 
-def restore_db_from_seed():
-    """Ueberschreibt die Laufzeit-DB mit dem committeten Seed-Snapshot.
+def _database_has_data():
+    """True, wenn unter DATABASE bereits eine benutzbare DB mit Nutzdaten liegt."""
+    if not os.path.isfile(DATABASE) or os.path.getsize(DATABASE) == 0:
+        return False
+    try:
+        with closing(sqlite3.connect(DATABASE)) as db:
+            if str(db.execute("PRAGMA quick_check").fetchone()[0]).lower() != "ok":
+                return False
+            row = db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
+            ).fetchone()
+            if row is None:
+                return False
+            return db.execute("SELECT COUNT(*) FROM users").fetchone()[0] > 0
+    except sqlite3.Error:
+        return False
 
-    Wird bei jedem Prozessstart (= jeder Render-Deploy) ausgefuehrt, sofern
-    RESET_DB_FROM_SEED gesetzt ist. Dadurch ist die DB nach jedem Deploy exakt
-    im Zustand von seed.db. Der Snapshot wird per SQLite-Backup zurueckgespielt,
-    damit das Ergebnis immer eine konsistente, in sich geschlossene DB ist.
+
+def seed_db_if_empty():
+    """Spielt den committeten Seed-Snapshot einmalig ein, wenn noch keine DB da ist.
+
+    Gedacht fuer den Betrieb mit persistenter Disk (Render): beim allerersten
+    Start ist die Disk leer -> die DB wird mit dem Stand aus seed.db befuellt.
+    Bei allen weiteren Deploys bleiben die auf der Disk gespeicherten, echten
+    Daten erhalten und werden NICHT ueberschrieben.
     """
-    if os.environ.get("RESET_DB_FROM_SEED", "").lower() not in ("1", "true", "yes"):
+    if os.environ.get("SEED_DB_IF_EMPTY", "").lower() not in ("1", "true", "yes"):
         return
     if not os.path.isfile(SEED_DATABASE):
         return
+    if _database_has_data():
+        return
     _ensure_database_path()
-    # Alte WAL-/SHM-Reste entfernen, sonst koennte SQLite sie mit der neuen
-    # DB-Datei vermischen.
-    for suffix in ("-wal", "-shm"):
-        leftover = DATABASE + suffix
-        if os.path.isfile(leftover):
+    # Evtl. vorhandene leere Datei + WAL-/SHM-Reste wegraeumen.
+    for path in (DATABASE, DATABASE + "-wal", DATABASE + "-shm"):
+        if os.path.isfile(path):
             try:
-                os.remove(leftover)
+                os.remove(path)
             except OSError:
                 pass
     with closing(sqlite3.connect(SEED_DATABASE)) as seed, \
@@ -346,6 +363,7 @@ def init_db():
         db.commit()
         _ensure_subject_columns(db)
         _ensure_role_column(db)
+        _ensure_display_name_column(db)
         _ensure_banned_column(db)
         _ensure_user_teacher_email_prefs(db)
         _ensure_schools(db)
@@ -367,6 +385,16 @@ def _ensure_role_column(db):
     if "role" not in names:
         db.execute(
             "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'"
+        )
+    db.commit()
+
+
+def _ensure_display_name_column(db):
+    cur = db.execute("PRAGMA table_info(users)")
+    names = {row[1] for row in cur.fetchall()}
+    if "display_name" not in names:
+        db.execute(
+            "ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''"
         )
     db.commit()
 
@@ -3068,7 +3096,7 @@ def login():
 def _public_user_payload(db, user_id):
     row = db.execute(
         """
-        SELECT username, role, school, class_name,
+        SELECT username, display_name, role, school, class_name,
                level_german, level_math, level_english, level_biology,
                level_pgw, level_spanish, level_art,
                pro_verified_german, pro_verified_math, pro_verified_english,
@@ -3086,6 +3114,7 @@ def _public_user_payload(db, user_id):
     return {
         "user_id": user_id,
         "username": row["username"],
+        "display_name": row["display_name"] or "",
         "role": role,
         "school": row["school"] or "",
         "class_name": row["class_name"] or "",
@@ -3516,6 +3545,23 @@ def learning_places_create():
     return jsonify(ok=True)
 
 
+@app.route("/api/profile/name", methods=["POST"])
+def api_profile_name():
+    if not _load_api_auth_context():
+        return jsonify(error="unauthorized"), 401
+    data = request.get_json(silent=True) or request.form
+    name = " ".join((data.get("display_name") or "").split())
+    if len(name) < 1 or len(name) > 64:
+        return jsonify(error="invalid_name"), 400
+    db = get_db()
+    db.execute(
+        "UPDATE users SET display_name = ? WHERE id = ?",
+        (name, session["user_id"]),
+    )
+    db.commit()
+    return jsonify(ok=True, display_name=name)
+
+
 @app.route("/api/me")
 def api_me():
     if not _load_api_auth_context():
@@ -3537,7 +3583,7 @@ from shop import register_shop_routes
 register_shop_routes(app, get_db, admin_api, login_required, login_required_api)
 
 with app.app_context():
-    restore_db_from_seed()
+    seed_db_if_empty()
     init_db()
 
 
