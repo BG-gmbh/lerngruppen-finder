@@ -8,3 +8,6 @@ services:
     envVars:
       - key: PORT
         value: "8080"
+      # Setzt die DB bei jedem Deploy auf den committeten seed.db-Stand zurueck.
+      - key: RESET_DB_FROM_SEED
+        value: "1"

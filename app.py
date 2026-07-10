@@ -28,6 +28,11 @@ elif os.access(os.path.dirname(default_database_path) or ".", os.W_OK):
     DATABASE = default_database_path
 else:
     DATABASE = "/tmp/lerngruppen-finder/users.db"
+
+# Snapshot der DB, der bei jedem Deploy den Laufzeit-Zustand wiederherstellt.
+# Nur aktiv, wenn RESET_DB_FROM_SEED gesetzt ist (auf Render), damit lokal
+# nichts ueberschrieben wird.
+SEED_DATABASE = os.path.join(os.path.dirname(__file__), "seed.db")
 LEVELS = frozenset({"pro", "medium", "noob"})
 ROLES = frozenset({"dev", "admin", "teacher", "user"})
 ROLE_RANK = {"user": 0, "teacher": 1, "admin": 2, "dev": 3}
@@ -274,6 +279,33 @@ def _ensure_subject_columns(db):
             f"UPDATE users SET {col} = 1 WHERE {CHAT_LEVEL_COLUMN[subject]} = 'pro' AND ({col} IS NULL OR {col} = 0)"
         )
     db.commit()
+
+
+def restore_db_from_seed():
+    """Ueberschreibt die Laufzeit-DB mit dem committeten Seed-Snapshot.
+
+    Wird bei jedem Prozessstart (= jeder Render-Deploy) ausgefuehrt, sofern
+    RESET_DB_FROM_SEED gesetzt ist. Dadurch ist die DB nach jedem Deploy exakt
+    im Zustand von seed.db. Der Snapshot wird per SQLite-Backup zurueckgespielt,
+    damit das Ergebnis immer eine konsistente, in sich geschlossene DB ist.
+    """
+    if os.environ.get("RESET_DB_FROM_SEED", "").lower() not in ("1", "true", "yes"):
+        return
+    if not os.path.isfile(SEED_DATABASE):
+        return
+    _ensure_database_path()
+    # Alte WAL-/SHM-Reste entfernen, sonst koennte SQLite sie mit der neuen
+    # DB-Datei vermischen.
+    for suffix in ("-wal", "-shm"):
+        leftover = DATABASE + suffix
+        if os.path.isfile(leftover):
+            try:
+                os.remove(leftover)
+            except OSError:
+                pass
+    with closing(sqlite3.connect(SEED_DATABASE)) as seed, \
+            closing(sqlite3.connect(DATABASE)) as live:
+        seed.backup(live)
 
 
 def init_db():
@@ -3505,6 +3537,7 @@ from shop import register_shop_routes
 register_shop_routes(app, get_db, admin_api, login_required, login_required_api)
 
 with app.app_context():
+    restore_db_from_seed()
     init_db()
 
 
