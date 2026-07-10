@@ -1,0 +1,7 @@
+app = "lerngruppen-finder"
+
+[build]
+  image = "dockerfile"
+
+[env]
+  PORT = "8080"

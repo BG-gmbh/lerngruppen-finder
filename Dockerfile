@@ -15,8 +15,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 EXPOSE 8080
-
+ENV PORT=8080
 ENV FLASK_APP=app.py
 ENV FLASK_ENV=production
 
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "app:app", "--workers", "2"]
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT} app:app --workers 2"]

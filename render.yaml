@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: lerngruppen-finder
+    env: docker
+    plan: starter
+    dockerfile_path: Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: "8080"
