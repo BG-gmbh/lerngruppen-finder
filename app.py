@@ -21,7 +21,13 @@ from mailer import send_smtp_mail, smtp_status
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
-DATABASE = os.path.join(os.path.dirname(__file__), "users.db")
+default_database_path = os.path.join(os.path.dirname(__file__), "users.db")
+if os.environ.get("DATABASE_PATH"):
+    DATABASE = os.environ.get("DATABASE_PATH")
+elif os.access(os.path.dirname(default_database_path) or ".", os.W_OK):
+    DATABASE = default_database_path
+else:
+    DATABASE = "/tmp/lerngruppen-finder/users.db"
 LEVELS = frozenset({"pro", "medium", "noob"})
 ROLES = frozenset({"dev", "admin", "teacher", "user"})
 ROLE_RANK = {"user": 0, "teacher": 1, "admin": 2, "dev": 3}
@@ -237,24 +243,41 @@ def close_db(_exc=None):
         db.close()
 
 
+def _ensure_database_path():
+    db_path = Path(DATABASE)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    if not db_path.exists():
+        db_path.touch()
+    return db_path
+
+
 def _ensure_subject_columns(db):
     cur = db.execute("PRAGMA table_info(users)")
     names = {row[1] for row in cur.fetchall()}
     for col in CHAT_LEVEL_COLUMN.values():
         if col not in names:
-            db.execute(
-                f"ALTER TABLE users ADD COLUMN {col} TEXT NOT NULL DEFAULT 'noob'"
-            )
+            try:
+                db.execute(
+                    f"ALTER TABLE users ADD COLUMN {col} TEXT NOT NULL DEFAULT 'noob'"
+                )
+            except sqlite3.OperationalError as exc:
+                if "duplicate column" not in str(exc).lower():
+                    raise
     for subject, col in CHAT_VERIFIED_COLUMN.items():
         if col not in names:
-            db.execute(f"ALTER TABLE users ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0")
-            db.execute(
-                f"UPDATE users SET {col} = 1 WHERE {CHAT_LEVEL_COLUMN[subject]} = 'pro'"
-            )
+            try:
+                db.execute(f"ALTER TABLE users ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError as exc:
+                if "duplicate column" not in str(exc).lower():
+                    raise
+        db.execute(
+            f"UPDATE users SET {col} = 1 WHERE {CHAT_LEVEL_COLUMN[subject]} = 'pro' AND ({col} IS NULL OR {col} = 0)"
+        )
     db.commit()
 
 
 def init_db():
+    _ensure_database_path()
     if os.path.isfile(DATABASE) and os.path.getsize(DATABASE) == 0:
         try:
             os.remove(DATABASE)
