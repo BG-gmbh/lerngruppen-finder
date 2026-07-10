@@ -1,6 +1,6 @@
 (function () {
   var cfg = window.APP_CONFIG || {};
-  var defaultApiBase = window.location.origin || "https://group-ly.tech";
+  var defaultApiBase = "https://api.group-ly.tech";
   cfg.apiBaseUrl = cfg.apiBaseUrl || defaultApiBase;
 
   function normalizeBase(value) {
