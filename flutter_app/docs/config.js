@@ -8,13 +8,26 @@
     return String(value).replace(/\/$/, "");
   }
 
+  function normalizePath(value) {
+    if (!value) return "";
+    var text = String(value).trim();
+    if (!text) return "";
+    if (/^https?:\/\//.test(text)) return text;
+    if (text.charAt(0) === "/") return text;
+    if (text.charAt(0) === ".") {
+      return "/" + text.replace(/^\.\/+/, "");
+    }
+    return "/" + text;
+  }
+
   cfg.apiBaseUrl = normalizeBase(cfg.apiBaseUrl || defaultApiBase);
 
   cfg.resolveApiUrl = function (path) {
-    if (!path) return cfg.apiBaseUrl || "";
-    if (/^https?:\/\//.test(path)) return path;
-    if (!cfg.apiBaseUrl) return path;
-    return cfg.apiBaseUrl + path;
+    var normalizedPath = normalizePath(path);
+    if (!normalizedPath) return cfg.apiBaseUrl || "";
+    if (/^https?:\/\//.test(normalizedPath)) return normalizedPath;
+    if (!cfg.apiBaseUrl) return normalizedPath;
+    return cfg.apiBaseUrl + normalizedPath;
   };
 
   cfg.resolveSitePath = function (path) {
@@ -35,19 +48,12 @@
   }
 
   function rewriteDom() {
-    var nodes = Array.prototype.slice.call(document.querySelectorAll("a[href^='/'], link[href^='/'], script[src^='/'], img[src^='/'], form[action^='/']"));
+    var nodes = Array.prototype.slice.call(document.querySelectorAll("a[href^='/'], link[href^='/'], script[src^='/'], img[src^='/']"));
     nodes.forEach(function (node) {
-      if (node.tagName === "FORM") {
-        var action = node.getAttribute("action");
-        if (action && action.charAt(0) === "/") {
-          node.setAttribute("action", cfg.resolveSitePath(action));
-        }
-      } else {
-        var attr = node.tagName === "LINK" || node.tagName === "SCRIPT" || node.tagName === "IMG" ? "href" : "src";
-        var value = node.getAttribute(attr);
-        if (value && value.charAt(0) === "/") {
-          node.setAttribute(attr, cfg.resolveSitePath(value));
-        }
+      var attr = node.tagName === "LINK" || node.tagName === "SCRIPT" || node.tagName === "IMG" ? "href" : "src";
+      var value = node.getAttribute(attr);
+      if (value && value.charAt(0) === "/") {
+        node.setAttribute(attr, cfg.resolveSitePath(value));
       }
     });
   }

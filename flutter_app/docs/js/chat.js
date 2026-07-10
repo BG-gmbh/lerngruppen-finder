@@ -584,45 +584,119 @@
     });
   }
 
-  function setAppointment() {
+  var appointmentModalBound = false;
+  var appointmentMapTimer = null;
+
+  function setModalError(text) {
+    var el = $("appointment-modal-error");
+    if (el) el.textContent = text || "";
+  }
+
+  function updateAppointmentMap() {
+    var input = $("appointment-location");
+    var frame = $("appointment-map");
+    var link = $("appointment-map-link");
+    if (!input || !frame) return;
+    var value = (input.value || "").trim();
+    if (!value) {
+      frame.removeAttribute("src");
+      if (link) link.classList.add("hidden");
+      return;
+    }
+    var query = encodeURIComponent(value);
+    frame.src = "https://www.google.com/maps?q=" + query + "&output=embed";
+    if (link) {
+      link.href = "https://www.google.com/maps/search/?api=1&query=" + query;
+      link.classList.remove("hidden");
+    }
+  }
+
+  function closeAppointmentModal() {
+    var modal = $("appointment-modal");
+    if (modal) modal.classList.add("hidden");
+  }
+
+  function submitAppointmentModal() {
     if (!currentSubject) return;
-    var appointment = prompt(
-      "Gib den Termin ein (Format: YYYY-MM-DD HH:MM):",
-      ""
-    );
-    if (appointment === null) return;
-    appointment = (appointment || "").trim();
+    var dtInput = $("appointment-datetime");
+    var locInput = $("appointment-location");
+    var appointment = dtInput ? (dtInput.value || "").trim() : "";
+    var location = locInput ? (locInput.value || "").trim() : "";
     if (!appointment) {
-      setLobbyError("Termin darf nicht leer sein.");
+      setModalError("Bitte Datum und Uhrzeit auswählen.");
       return;
     }
-    var location = prompt("Gib den Ort ein:", "");
-    if (location === null) return;
-    location = (location || "").trim();
     if (!location) {
-      setLobbyError("Ort darf nicht leer sein.");
+      setModalError("Bitte einen Ort eingeben.");
       return;
     }
+    // datetime-local liefert "YYYY-MM-DDTHH:MM" -> Backend erwartet "YYYY-MM-DD HH:MM".
+    appointment = appointment.replace("T", " ").slice(0, 16);
     api("/api/chat/appointment", {
       method: "POST",
       body: { subject: currentSubject, appointment: appointment, location: location },
     }).then(function (res) {
       if (!res.ok) {
         if (res.data && res.data.error === "invalid_datetime") {
-          setLobbyError("Ungueltiges Datum. Bitte Format YYYY-MM-DD HH:MM verwenden.");
+          setModalError("Ungueltiges Datum. Bitte Datum und Uhrzeit auswählen.");
         } else if (
           res.data &&
           (res.data.error === "empty_location" ||
             res.data.error === "invalid_location")
         ) {
-          setLobbyError("Bitte einen Ort eingeben.");
+          setModalError("Bitte einen Ort eingeben.");
         } else {
-          setLobbyError("Termin speichern fehlgeschlagen.");
+          setModalError("Termin speichern fehlgeschlagen.");
         }
         return;
       }
+      closeAppointmentModal();
       loadAppointment();
     });
+  }
+
+  function bindAppointmentModal() {
+    if (appointmentModalBound) return;
+    var modal = $("appointment-modal");
+    if (!modal) return;
+    appointmentModalBound = true;
+
+    var cancelBtn = $("appointment-cancel");
+    if (cancelBtn) cancelBtn.addEventListener("click", closeAppointmentModal);
+
+    var saveBtn = $("appointment-save");
+    if (saveBtn) saveBtn.addEventListener("click", submitAppointmentModal);
+
+    // Klick auf den Hintergrund schließt das Modal.
+    modal.addEventListener("click", function (e) {
+      if (e.target === modal) closeAppointmentModal();
+    });
+
+    var locInput = $("appointment-location");
+    if (locInput) {
+      locInput.addEventListener("input", function () {
+        if (appointmentMapTimer) clearTimeout(appointmentMapTimer);
+        appointmentMapTimer = setTimeout(updateAppointmentMap, 500);
+      });
+    }
+  }
+
+  function setAppointment() {
+    if (!currentSubject) return;
+    var modal = $("appointment-modal");
+    if (!modal) return;
+    bindAppointmentModal();
+    setModalError("");
+    var dtInput = $("appointment-datetime");
+    if (dtInput) dtInput.value = "";
+    var locInput = $("appointment-location");
+    if (locInput) locInput.value = "";
+    var frame = $("appointment-map");
+    if (frame) frame.removeAttribute("src");
+    var link = $("appointment-map-link");
+    if (link) link.classList.add("hidden");
+    modal.classList.remove("hidden");
+    if (dtInput) dtInput.focus();
   }
 
   function clearMessagesUi() {

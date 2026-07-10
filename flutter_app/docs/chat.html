@@ -58,6 +58,39 @@
       </form>
     </section>
   </main>
+
+  <div id="appointment-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="appointment-modal-title">
+    <div class="modal-card">
+      <h2 id="appointment-modal-title" class="modal-title">Termin festlegen</h2>
+
+      <div class="modal-field">
+        <label for="appointment-datetime">Datum &amp; Uhrzeit</label>
+        <input type="datetime-local" id="appointment-datetime" class="modal-input">
+      </div>
+
+      <div class="modal-field">
+        <label for="appointment-location">Ort</label>
+        <input type="text" id="appointment-location" class="modal-input" autocomplete="off"
+               placeholder="z. B. Stadtbibliothek München">
+        <p class="field-hint modal-hint">Tippe eine Adresse oder einen Ort ein – die Karte zeigt eine Vorschau.</p>
+        <div class="modal-map-wrap">
+          <iframe id="appointment-map" class="modal-map" title="Kartenvorschau" loading="lazy"
+                  referrerpolicy="no-referrer-when-downgrade"></iframe>
+        </div>
+        <a id="appointment-map-link" class="modal-map-link hidden" target="_blank" rel="noopener">
+          Auf Google Maps öffnen
+        </a>
+      </div>
+
+      <p class="muted modal-error" id="appointment-modal-error" role="alert"></p>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="appointment-cancel">Abbrechen</button>
+        <button type="button" class="btn btn-primary" id="appointment-save">Speichern</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/js/chat.js"></script>
 </body>
 </html>

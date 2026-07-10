@@ -770,3 +770,93 @@ a:hover {
   max-width: 18rem;
   word-break: break-word;
 }
+
+/* Appointment modal */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 30rem;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid #2a3544;
+  border-radius: var(--radius);
+  padding: 1.25rem 1.25rem 1rem;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.modal-title {
+  margin: 0 0 1rem;
+}
+
+.modal-field {
+  margin-bottom: 1rem;
+}
+
+.modal-field label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-weight: 600;
+}
+
+.modal-input {
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid #2a3544;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.modal-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.modal-hint {
+  margin: 0.35rem 0 0.5rem;
+}
+
+.modal-map-wrap {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #2a3544;
+  background: var(--bg);
+  aspect-ratio: 16 / 10;
+}
+
+.modal-map {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.modal-map-link {
+  display: inline-block;
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.modal-error {
+  color: var(--danger);
+  min-height: 1.2em;
+  margin: 0 0 0.75rem;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}

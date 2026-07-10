@@ -1,5 +1,16 @@
 (function () {
   var supportedActions = ["/login", "/register", "/setup", "/profile", "/logout"];
+  function normalizeAction(action) {
+    if (!action) return "";
+    var text = String(action).trim();
+    if (!text) return "";
+    if (/^https?:\/\//.test(text)) return text;
+    if (text.charAt(0) === ".") {
+      return "/" + text.replace(/^\.\/+/, "");
+    }
+    return text;
+  }
+
   function getApiUrl(path) {
     var cfg = window.APP_CONFIG || {};
     if (typeof cfg.resolveApiUrl === "function") return cfg.resolveApiUrl(path);
@@ -9,7 +20,7 @@
   document.addEventListener("submit", function (event) {
     var form = event.target;
     if (!form || form.tagName !== "FORM") return;
-    var action = form.getAttribute("action") || "";
+    var action = normalizeAction(form.getAttribute("action") || "");
     if (supportedActions.indexOf(action) === -1) return;
     event.preventDefault();
 
