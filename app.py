@@ -3676,9 +3676,9 @@ def _extract_zeugnis(image_bytes, media_type):
         },
     }
 
-    client = OpenAI(api_key=api_key)
     b64 = base64.standard_b64encode(image_bytes).decode("ascii")
     try:
+        client = OpenAI(api_key=api_key)
         msg = client.chat.completions.create(
             model=ONBOARDING_MODEL,
             max_tokens=1024,
