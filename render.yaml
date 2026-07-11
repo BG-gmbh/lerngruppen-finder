@@ -19,3 +19,8 @@ services:
       # Beim allerersten Start (leere Disk) mit dem seed.db-Stand befuellen.
       - key: SEED_DB_IF_EMPTY
         value: "1"
+      # OpenAI-Key fuer die Zeugnis-Auslesung. sync: false -> Wert wird im
+      # Render-Dashboard gesetzt (NICHT im Repo). Ohne diesen Wert geht keine
+      # Anfrage an GPT durch (no_api_key).
+      - key: OPENAI_API_KEY
+        sync: false
