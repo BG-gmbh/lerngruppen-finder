@@ -56,7 +56,7 @@ CHAT_ROOM_SUFFIX_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 AVATAR_UPLOAD_DIR = Path(__file__).resolve().parent / "flutter_app" / "docs" / "uploads" / "avatars"
 AVATAR_ALLOWED_EXTENSIONS = frozenset({"png", "jpg", "jpeg", "gif", "webp"})
 AVATAR_MAX_BYTES = 2 * 1024 * 1024
-# Zeugnis-Upload fuer das Onboarding (Claude-Vision-Auslesung).
+# Zeugnis-Upload fuer das Onboarding (GPT-Vision-Auslesung).
 ZEUGNIS_ALLOWED_MEDIA = {
     "png": "image/png",
     "jpg": "image/jpeg",
@@ -65,7 +65,7 @@ ZEUGNIS_ALLOWED_MEDIA = {
     "gif": "image/gif",
 }
 ZEUGNIS_MAX_BYTES = 8 * 1024 * 1024
-ONBOARDING_MODEL = os.environ.get("ONBOARDING_MODEL", "claude-sonnet-5")
+ONBOARDING_MODEL = os.environ.get("ONBOARDING_MODEL", "gpt-4o")
 STATIC_DIR = Path(__file__).resolve().parent / "flutter_app" / "docs"
 app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="")
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-nur-lokal-bitte-aendern")
@@ -3624,17 +3624,18 @@ def api_profile_name():
 
 
 def _extract_zeugnis(image_bytes, media_type):
-    """Liest ein Zeugnisbild per Claude Vision aus.
+    """Liest ein Zeugnisbild per GPT Vision aus.
 
     Gibt ein Dict {display_name, class_name, school, grades:{fach: note}} zurueck.
     Wirft RuntimeError('no_api_key') bzw. RuntimeError('ai_failed').
     """
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("no_api_key")
     try:
         import base64
-        import anthropic
+        import json
+        from openai import OpenAI
     except ImportError:
         raise RuntimeError("ai_failed")
 
@@ -3646,50 +3647,51 @@ def _extract_zeugnis(image_bytes, media_type):
         for subject, label in CHAT_SUBJECT_LABELS.items()
     }
     tool = {
-        "name": "zeugnis_daten",
-        "description": "Strukturierte Daten aus einem deutschen Schulzeugnis.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "display_name": {
-                    "type": ["string", "null"],
-                    "description": "Voller Name der Schuelerin/des Schuelers.",
+        "type": "function",
+        "function": {
+            "name": "zeugnis_daten",
+            "description": "Strukturierte Daten aus einem deutschen Schulzeugnis.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "display_name": {
+                        "type": ["string", "null"],
+                        "description": "Voller Name der Schuelerin/des Schuelers.",
+                    },
+                    "class_name": {
+                        "type": ["string", "null"],
+                        "description": "Klasse, z. B. '8a' oder '10'.",
+                    },
+                    "school": {
+                        "type": ["string", "null"],
+                        "description": "Name der Schule.",
+                    },
+                    "grades": {
+                        "type": "object",
+                        "properties": grade_props,
+                    },
                 },
-                "class_name": {
-                    "type": ["string", "null"],
-                    "description": "Klasse, z. B. '8a' oder '10'.",
-                },
-                "school": {
-                    "type": ["string", "null"],
-                    "description": "Name der Schule.",
-                },
-                "grades": {
-                    "type": "object",
-                    "properties": grade_props,
-                },
+                "required": ["grades"],
             },
-            "required": ["grades"],
         },
     }
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client = OpenAI(api_key=api_key)
     b64 = base64.standard_b64encode(image_bytes).decode("ascii")
     try:
-        msg = client.messages.create(
+        msg = client.chat.completions.create(
             model=ONBOARDING_MODEL,
             max_tokens=1024,
             tools=[tool],
-            tool_choice={"type": "tool", "name": "zeugnis_daten"},
+            tool_choice={"type": "function", "function": {"name": "zeugnis_daten"}},
             messages=[
                 {
                     "role": "user",
                     "content": [
                         {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": media_type,
-                                "data": b64,
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{media_type};base64,{b64}",
                             },
                         },
                         {
@@ -3709,9 +3711,12 @@ def _extract_zeugnis(image_bytes, media_type):
     except Exception:
         raise RuntimeError("ai_failed")
 
-    for block in msg.content:
-        if getattr(block, "type", None) == "tool_use" and block.name == "zeugnis_daten":
-            return block.input
+    try:
+        for call in msg.choices[0].message.tool_calls or []:
+            if call.function.name == "zeugnis_daten":
+                return json.loads(call.function.arguments)
+    except (AttributeError, IndexError, ValueError):
+        raise RuntimeError("ai_failed")
     raise RuntimeError("ai_failed")
 
 
