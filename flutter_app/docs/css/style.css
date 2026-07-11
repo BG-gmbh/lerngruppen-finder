@@ -71,6 +71,15 @@ a:hover {
   flex-wrap: wrap;
 }
 
+.school-logo {
+  height: 2rem;
+  max-height: 2rem;
+  width: auto;
+  max-width: 140px;
+  object-fit: contain;
+  border-radius: 6px;
+}
+
 .nav-user {
   color: var(--muted);
   font-size: 0.9rem;

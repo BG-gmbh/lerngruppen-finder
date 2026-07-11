@@ -33,6 +33,7 @@
       <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="codes">Einladungs-Codes</button>
       <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="shop">Laden</button>
       <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="teachers">Lehrer (E-Mail)</button>
+      <button type="button" class="tab-btn hidden" id="tab-btn-logo" role="tab" aria-selected="false" data-tab="logo">Logo</button>
     </div>
 
     <section class="card tab-panel is-active" id="tab-accounts" role="tabpanel">
@@ -253,9 +254,31 @@
       <h3 class="subsection-title">Einträge</h3>
       <ul id="teacher-list" class="code-list"></ul>
     </section>
+
+    <section class="card tab-panel hidden" id="tab-logo" role="tabpanel">
+      <h2 class="card-title">Schul-Logo</h2>
+      <p class="field-hint">Dieses Logo erscheint oben rechts im Header. Leer lassen entfernt es wieder. Als Dev kannst du die Schule frei wählen (leer = für alle Schulen).</p>
+      <form id="logo-form" class="stack-form" autocomplete="off">
+        <label id="logo-school-label">
+          Schule (leer = global)
+          <input id="logo-school" type="text" maxlength="120" placeholder="z. B. Schule A – oder leer für alle">
+        </label>
+        <label>
+          Logo-URL
+          <input id="logo-url" type="url" maxlength="1000" placeholder="https://…/logo.png">
+        </label>
+        <button type="submit" class="btn">Logo speichern</button>
+      </form>
+      <p id="logo-status" class="muted" role="status"></p>
+      <div id="logo-preview-wrap" class="hidden" style="margin-top:0.75rem;">
+        <p class="field-hint">Vorschau:</p>
+        <img id="logo-preview" alt="Logo-Vorschau" style="max-height:4rem;max-width:200px;border-radius:6px;background:var(--surface);padding:0.35rem;">
+      </div>
+    </section>
   </main>
 
   <script src="/js/flash.js"></script>
+  <script src="/js/school-logo.js"></script>
   <script>
     (function () {
       var buttons = document.querySelectorAll(".tab-btn");
@@ -266,6 +289,7 @@
         codes: document.getElementById("tab-codes"),
         shop: document.getElementById("tab-shop"),
         teachers: document.getElementById("tab-teachers"),
+        logo: document.getElementById("tab-logo"),
       };
 
       function renderUsers(data) {
@@ -440,8 +464,92 @@
             loadMailStatus();
             loadTeachers();
           }
+          if (key === "logo") {
+            loadLogoSettings();
+          }
         });
       });
+
+      function setLogoPreview(url) {
+        var wrap = document.getElementById("logo-preview-wrap");
+        var img = document.getElementById("logo-preview");
+        if (!wrap || !img) return;
+        if (url) {
+          img.src = url;
+          wrap.classList.remove("hidden");
+        } else {
+          img.removeAttribute("src");
+          wrap.classList.add("hidden");
+        }
+      }
+
+      function loadLogoSettings() {
+        var isDev = window.__currentRole === "dev";
+        var schoolInput = document.getElementById("logo-school");
+        var school = schoolInput ? (schoolInput.value || "").trim() : "";
+        var query = (isDev && school) ? ("?school=" + encodeURIComponent(school)) : "";
+        fetch("/api/admin/app-settings" + query, { credentials: "same-origin" })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (data) {
+            if (!data) return;
+            var urlInput = document.getElementById("logo-url");
+            if (urlInput) urlInput.value = data.school_logo_url || "";
+            // Nicht-Devs: eigene Schule anzeigen, Feld sperren.
+            if (schoolInput && !isDev) {
+              schoolInput.value = data.school || "";
+              schoolInput.readOnly = true;
+              var label = document.getElementById("logo-school-label");
+              if (label) label.firstChild.textContent = "Schule";
+            }
+            setLogoPreview(data.school_logo_url || "");
+          });
+      }
+
+      var logoSchoolInput = document.getElementById("logo-school");
+      if (logoSchoolInput) {
+        logoSchoolInput.addEventListener("change", function () {
+          if (window.__currentRole === "dev") loadLogoSettings();
+        });
+      }
+
+      var logoForm = document.getElementById("logo-form");
+      if (logoForm) {
+        logoForm.addEventListener("submit", function (e) {
+          e.preventDefault();
+          var isDev = window.__currentRole === "dev";
+          var status = document.getElementById("logo-status");
+          var logoUrl = (document.getElementById("logo-url").value || "").trim();
+          var body = { school_logo_url: logoUrl };
+          if (isDev) {
+            body.school = (document.getElementById("logo-school").value || "").trim();
+          }
+          fetch("/api/admin/app-settings", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          })
+            .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+            .then(function (res) {
+              if (!res.ok) {
+                status.textContent = res.d && res.d.error === "invalid_logo_url"
+                  ? "Ungültige URL – muss mit http:// oder https:// beginnen (max. 1000 Zeichen)."
+                  : "Speichern fehlgeschlagen.";
+                status.style.color = "var(--danger)";
+                return;
+              }
+              status.textContent = "Logo gespeichert" +
+                (res.d.school ? " (Schule: " + res.d.school + ")." : " (global).") +
+                " Neu laden, um es im Header zu sehen.";
+              status.style.color = "";
+              setLogoPreview(res.d.school_logo_url || "");
+            })
+            .catch(function () {
+              status.textContent = "Speichern fehlgeschlagen.";
+              status.style.color = "var(--danger)";
+            });
+        });
+      }
 
       function loadCodes() {
         fetch("/api/admin/invite-codes", { credentials: "same-origin" })
@@ -695,6 +803,10 @@
           document.getElementById("nav-username").textContent = data.username;
           window.__currentRole = data.role || "user";
           window.__currentClass = data.class_name || "";
+          if (data.role === "admin" || data.role === "dev") {
+            var logoTabBtn = document.getElementById("tab-btn-logo");
+            if (logoTabBtn) logoTabBtn.classList.remove("hidden");
+          }
           if (data.role === "teacher") {
             var accountClass = document.querySelector('input[name="class_name"]');
             if (accountClass) {
