@@ -274,12 +274,12 @@ def register_shop_routes(app, get_db, admin_api, login_required, login_required_
     @app.route("/laden.html")
     @login_required
     def laden_page():
-        return send_from_directory(app.static_folder, "shop.html")
+        return send_from_directory(app.static_folder, "laden.html")
 
     @app.route("/shop.html")
     @login_required
     def shop_page():
-        return send_from_directory(app.static_folder, "shop.html")
+        return send_from_directory(app.static_folder, "laden.html")
 
     @app.route("/api/shop", methods=["GET"])
     @login_required_api

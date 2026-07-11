@@ -1,6 +1,11 @@
 (function () {
   var cfg = window.APP_CONFIG || {};
-  var defaultApiBase = "https://api.group-ly.tech";
+  // Standard: same-origin. Requests gehen an den Host, der die Seite
+  // ausgeliefert hat (api.group-ly.tech, www.api.group-ly.tech, localhost, …).
+  // Fuer ein echtes Split-Deployment (statisches Frontend + separate API)
+  // vor dem Laden dieses Scripts window.APP_CONFIG = { apiBaseUrl: "https://api…" }
+  // setzen.
+  var defaultApiBase = "";
   cfg.apiBaseUrl = cfg.apiBaseUrl || defaultApiBase;
 
   function normalizeBase(value) {
