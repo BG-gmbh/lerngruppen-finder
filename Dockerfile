@@ -19,4 +19,8 @@ ENV PORT=8080
 ENV FLASK_APP=app.py
 ENV FLASK_ENV=production
 
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT} app:app --workers 2"]
+# --preload: App wird einmalig im Master importiert -> seed_db_if_empty()/init_db()
+# laufen genau einmal, bevor die Worker geforkt werden. Ohne --preload wuerde jeder
+# Worker die DB-Migration parallel ausfuehren -> SQLite "disk I/O error" /
+# "attempt to write a readonly database" auf der /data-Disk.
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT} app:app --workers 2 --preload"]
