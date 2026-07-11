@@ -1,3 +1,4 @@
+import logging
 import os
 import secrets
 try:
@@ -69,6 +70,14 @@ ONBOARDING_MODEL = os.environ.get("ONBOARDING_MODEL", "gpt-4o")
 STATIC_DIR = Path(__file__).resolve().parent / "flutter_app" / "docs"
 app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="")
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-nur-lokal-bitte-aendern")
+
+# Log-Level konfigurierbar (Default INFO), damit Debug-Meldungen z. B. in den
+# Render-Logs sichtbar sind. LOG_LEVEL=DEBUG fuer mehr Details.
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+app.logger.setLevel(os.environ.get("LOG_LEVEL", "INFO").upper())
 ALLOWED_ORIGINS = frozenset(
     origin.strip().rstrip("/")
     for origin in os.environ.get("FLASK_ALLOWED_ORIGINS", "").split(",")
@@ -3631,12 +3640,18 @@ def _extract_zeugnis(image_bytes, media_type):
     """
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
+        app.logger.warning("Zeugnis-Auslesung: OPENAI_API_KEY nicht gesetzt.")
         raise RuntimeError("no_api_key")
+    app.logger.info(
+        "Zeugnis-Auslesung startet (Modell=%s, %d Bytes, %s).",
+        ONBOARDING_MODEL, len(image_bytes), media_type,
+    )
     try:
         import base64
         import json
         from openai import OpenAI
     except ImportError:
+        app.logger.exception("Zeugnis-Auslesung: openai-Paket nicht installiert.")
         raise RuntimeError("ai_failed")
 
     grade_props = {
@@ -3709,14 +3724,25 @@ def _extract_zeugnis(image_bytes, media_type):
             ],
         )
     except Exception:
+        app.logger.exception("Zeugnis-Auslesung: OpenAI-Aufruf fehlgeschlagen.")
         raise RuntimeError("ai_failed")
 
     try:
         for call in msg.choices[0].message.tool_calls or []:
             if call.function.name == "zeugnis_daten":
-                return json.loads(call.function.arguments)
+                data = json.loads(call.function.arguments)
+                app.logger.info(
+                    "Zeugnis-Auslesung erfolgreich (%d Noten erkannt).",
+                    len((data or {}).get("grades") or {}),
+                )
+                return data
     except (AttributeError, IndexError, ValueError):
+        app.logger.exception("Zeugnis-Auslesung: Antwort konnte nicht geparst werden.")
         raise RuntimeError("ai_failed")
+    app.logger.error(
+        "Zeugnis-Auslesung: kein 'zeugnis_daten'-Tool-Call in der Antwort (finish_reason=%s).",
+        getattr(msg.choices[0], "finish_reason", "?"),
+    )
     raise RuntimeError("ai_failed")
 
 
