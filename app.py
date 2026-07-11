@@ -14,7 +14,7 @@ from pathlib import Path
 from urllib.parse import urlencode, urlparse
 
 from dotenv import load_dotenv
-from flask import Flask, g, jsonify, redirect, request, send_from_directory, session
+from flask import Flask, g, jsonify, redirect, request, send_file, send_from_directory, session
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -1678,6 +1678,30 @@ def admin_app_settings_post():
     set_app_setting(db, school_logo_key(school), school_logo_url)
     db.commit()
     return jsonify(ok=True, school_logo_url=school_logo_url, school=school)
+
+
+@app.route("/api/admin/db-download", methods=["GET"])
+def admin_db_download():
+    """Laedt die komplette SQLite-DB als Datei herunter.
+
+    Nur fuer eingeloggte Devs: Die Datei enthaelt Passwort-Hashes und
+    E-Mail-Adressen. Zum Ansehen z. B. in SQLGate/DBeaver/DB Browser oeffnen.
+    """
+    if not _load_api_auth_context():
+        return jsonify(error="auth"), 401
+    if session.get("role") != "dev":
+        return jsonify(error="forbidden"), 403
+    # WAL-Daten in die Hauptdatei schreiben, damit der Download aktuell ist.
+    try:
+        get_db().execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    except sqlite3.Error:
+        pass
+    return send_file(
+        DATABASE,
+        mimetype="application/x-sqlite3",
+        as_attachment=True,
+        download_name="users.db",
+    )
 
 
 @app.route("/api/admin/mail-status", methods=["GET"])
