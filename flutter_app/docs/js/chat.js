@@ -778,18 +778,63 @@
   function chooseProSubject() {
     var choices = [];
     creatableSubjects.forEach(function (room) {
-      if (canCreateSubject(room.subject)) choices.push(room.label + "|" + room.subject);
+      if (canCreateSubject(room.subject)) choices.push({ label: room.label, subject: room.subject });
     });
-    if (!choices.length) return null;
-    if (choices.length === 1) return choices[0].split("|")[1];
-    var text = "Wähle ein Fach:\n" + choices.map(function (c, idx) {
-      return (idx + 1) + ". " + c.split("|")[0];
-    }).join("\n") + "\nGib die Zahl ein.";
-    var choice = prompt(text);
-    if (!choice) return null;
-    var idx = parseInt(choice, 10) - 1;
-    if (idx < 0 || idx >= choices.length) return null;
-    return choices[idx].split("|")[1];
+    if (!choices.length) return Promise.resolve(null);
+    if (choices.length === 1) return Promise.resolve(choices[0].subject);
+    return openSubjectModal(choices);
+  }
+
+  function openSubjectModal(choices) {
+    var modal = $("subject-modal");
+    var list = $("subject-modal-choices");
+    var cancelBtn = $("subject-cancel");
+    if (!modal || !list) {
+      return Promise.resolve(null);
+    }
+    return new Promise(function (resolve) {
+      var settled = false;
+
+      function cleanup() {
+        modal.removeEventListener("click", onBackdrop);
+        document.removeEventListener("keydown", onKeydown);
+        modal.classList.add("hidden");
+        list.innerHTML = "";
+      }
+
+      function finish(subject) {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(subject);
+      }
+
+      function onBackdrop(e) {
+        if (e.target === modal) finish(null);
+      }
+
+      function onKeydown(e) {
+        if (e.key === "Escape") finish(null);
+      }
+
+      list.innerHTML = "";
+      choices.forEach(function (choice) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "subject-choice-btn";
+        btn.textContent = choice.label;
+        btn.addEventListener("click", function () { finish(choice.subject); });
+        list.appendChild(btn);
+      });
+
+      if (cancelBtn) cancelBtn.onclick = function () { finish(null); };
+      modal.addEventListener("click", onBackdrop);
+      document.addEventListener("keydown", onKeydown);
+
+      modal.classList.remove("hidden");
+      var first = list.querySelector(".subject-choice-btn");
+      if (first) first.focus();
+    });
   }
 
   function bindNavName() {
@@ -814,12 +859,13 @@
   }
 
   $("btn-create-room").addEventListener("click", function () {
-    var subject = chooseProSubject();
-    if (!subject) {
-      setLobbyError("Wähle zuerst ein Pro-Fach aus, um einen Raum zu erstellen.");
-      return;
-    }
-    openSubject(subject);
+    chooseProSubject().then(function (subject) {
+      if (!subject) {
+        setLobbyError("Wähle zuerst ein Pro-Fach aus, um einen Raum zu erstellen.");
+        return;
+      }
+      openSubject(subject);
+    });
   });
 
   $("btn-leave").addEventListener("click", function () {
