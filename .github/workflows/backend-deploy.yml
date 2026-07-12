@@ -1,10 +1,14 @@
-name: Deploy Backend (Cloudflare Containers)
+name: Deploy Backend (Render)
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
+# Optional: Render deployt bei autoDeploy:true ohnehin automatisch bei jedem
+# Push. Dieser Workflow stoesst den Deploy zusaetzlich explizit an (falls
+# autoDeploy im Dashboard aus ist). Benoetigt die Secrets RENDER_API_KEY und
+# RENDER_SERVICE_ID.
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -12,19 +16,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install deps
-        run: npm install
-
-      # Builds the container image from ./Dockerfile and deploys the Worker.
-      # Secrets (MONGODB_URI, FLASK_SECRET_KEY, OPENAI_API_KEY, SMTP_*) are set
-      # once via `wrangler secret put` and are NOT managed here.
-      - name: Deploy to Cloudflare
+      - name: Trigger Render deploy
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx wrangler deploy
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+        run: |
+          curl -X POST "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json"

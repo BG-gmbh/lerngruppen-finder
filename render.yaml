@@ -1,0 +1,48 @@
+services:
+  - type: web
+    name: lerngruppen-finder
+    env: docker
+    plan: starter
+    dockerfilePath: Dockerfile
+    autoDeploy: true
+    # Kein persistenter Datentraeger mehr: der Zustand liegt extern in MongoDB
+    # Atlas, der Container ist zustandslos.
+    envVars:
+      - key: PORT
+        value: "8080"
+
+      # --- MongoDB Atlas ---
+      # MONGODB_URI wird im Render-Dashboard gesetzt (sync: false -> nicht im Repo).
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB
+        value: grouply
+
+      # --- Flask / Session ---
+      # Einmalig generierter Secret Key (bleibt ueber Deploys stabil).
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      # Split-Origin: Frontend (group-ly.tech) und API (api.group-ly.tech) sind
+      # verschiedene Subdomains -> Session-Cookie ueber die Root-Domain teilen.
+      - key: SESSION_COOKIE_SECURE
+        value: "1"
+      - key: SESSION_COOKIE_DOMAIN
+        value: .group-ly.tech
+      - key: FLASK_ALLOWED_ORIGINS
+        value: https://group-ly.tech,https://www.group-ly.tech
+
+      # --- Zeugnis-Auslesung (GPT) ---
+      - key: OPENAI_API_KEY
+        sync: false
+
+      # --- Gmail SMTP (Lehrer-E-Mails) ---
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false
