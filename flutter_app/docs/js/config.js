@@ -1,11 +1,22 @@
 (function () {
   var cfg = window.APP_CONFIG || {};
-  // Standard: same-origin. Requests gehen an den Host, der die Seite
-  // ausgeliefert hat (api.group-ly.tech, www.api.group-ly.tech, localhost, …).
-  // Fuer ein echtes Split-Deployment (statisches Frontend + separate API)
-  // vor dem Laden dieses Scripts window.APP_CONFIG = { apiBaseUrl: "https://api…" }
-  // setzen.
-  var defaultApiBase = "";
+  // Split-Deployment: das statische Frontend liegt auf Cloudflare Pages
+  // (group-ly.tech), die API auf Cloudflare Containers (api.group-ly.tech).
+  // In Produktion zeigen wir daher auf die API-Subdomain; lokal (localhost,
+  // 127.0.0.1, Datei) bleibt es bei same-origin, damit die Entwicklung ohne
+  // CORS laeuft. Ueberschreibbar via window.APP_CONFIG = { apiBaseUrl: "…" }.
+  function detectApiBase() {
+    try {
+      var host = window.location.hostname || "";
+    } catch (e) {
+      return "";
+    }
+    if (/(^|\.)group-ly\.tech$/i.test(host) && host.indexOf("api.") !== 0) {
+      return "https://api.group-ly.tech";
+    }
+    return "";
+  }
+  var defaultApiBase = detectApiBase();
   cfg.apiBaseUrl = cfg.apiBaseUrl || defaultApiBase;
 
   function normalizeBase(value) {

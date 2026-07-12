@@ -1,15 +1,16 @@
 """
 Setzt die Rolle eines bestehenden Nutzers auf 'admin' oder 'dev'.
 
-Aufruf (im Projektordner, venv aktiv oder mit system-python3):
+Aufruf (im Projektordner, mit gesetzter MONGODB_URI):
 
-  python promote_admin.py DEIN_BENUTZERNAME [admin|dev]
+  MONGODB_URI="mongodb+srv://..." python promote_admin.py DEIN_BENUTZERNAME [admin|dev]
 
 Danach neu einloggen (Session kennt die alte Rolle noch, bis Logout/Login).
 """
-import os
-import sqlite3
 import sys
+
+from db_mongo import get_db
+
 
 def main():
     if len(sys.argv) not in (2, 3):
@@ -24,30 +25,13 @@ def main():
         print("Role must be 'user', 'teacher', 'admin' or 'dev'.", file=sys.stderr)
         sys.exit(2)
 
-    db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "users.db")
-    if not os.path.isfile(db_path):
-        print(f"No database at {db_path}", file=sys.stderr)
-        sys.exit(1)
+    db = get_db()
+    result = db.users.update_one({"username": username}, {"$set": {"role": role}})
 
-    conn = sqlite3.connect(db_path)
-    try:
-        cur = conn.execute(
-            "UPDATE users SET role = ? WHERE username = ?",
-            (role, username),
-        )
-        conn.commit()
-        n = cur.rowcount
-    finally:
-        conn.close()
-
-    if n == 0:
+    if result.matched_count == 0:
         print("No user with that username. List users:")
-        c2 = sqlite3.connect(db_path)
-        try:
-            for row in c2.execute("SELECT id, username, role FROM users"):
-                print(f"  id={row[0]}  username={row[1]!r}  role={row[2]!r}")
-        finally:
-            c2.close()
+        for row in db.users.find({}, {"username": 1, "role": 1}):
+            print(f"  id={row['_id']}  username={row.get('username')!r}  role={row.get('role')!r}")
         sys.exit(1)
     print(f"OK: {username!r} is now {role}. Log out in the browser, then log in again.")
     sys.exit(0)

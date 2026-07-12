@@ -19,8 +19,7 @@ ENV PORT=8080
 ENV FLASK_APP=app.py
 ENV FLASK_ENV=production
 
-# --preload: App wird einmalig im Master importiert -> seed_db_if_empty()/init_db()
-# laufen genau einmal, bevor die Worker geforkt werden. Ohne --preload wuerde jeder
-# Worker die DB-Migration parallel ausfuehren -> SQLite "disk I/O error" /
-# "attempt to write a readonly database" auf der /data-Disk.
+# --preload: App wird einmalig im Master importiert -> init_db() (Anlegen der
+# MongoDB-Indizes) laeuft genau einmal, bevor die Worker geforkt werden. Der
+# Datenbank-Zustand liegt extern in MongoDB Atlas; der Container ist zustandslos.
 CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT} app:app --workers 2 --preload"]

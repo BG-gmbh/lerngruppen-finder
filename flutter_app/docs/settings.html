@@ -189,7 +189,7 @@
       });
     }
 
-    fetch("/api/me", { credentials: "same-origin" })
+    fetch("/api/me", { credentials: "include" })
       .then(function (r) {
         if (r.status === 401) {
           window.location.replace("/login.html?next=/settings.html&flash=needlogin");

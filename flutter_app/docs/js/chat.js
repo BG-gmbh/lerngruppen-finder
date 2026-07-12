@@ -2,7 +2,7 @@
   var POLL_ROOMS_MS = 4000;
   var POLL_MSG_MS = 2500;
   var currentSubject = null;
-  var sinceId = 0;
+  var sinceId = "";
   var roomsTimer = null;
   var msgTimer = null;
   var appointmentTimer = null;
@@ -213,7 +213,7 @@
         wrap.appendChild(deleteBtn);
       }
       box.appendChild(wrap);
-      if (m.id > sinceId) sinceId = m.id;
+      sinceId = m.id;
     });
     if (atBottom) box.scrollTop = box.scrollHeight;
   }
@@ -243,7 +243,7 @@
         return;
       }
       if (res.data.messages.length)
-        appendMessages(res.data.messages, beforeSince === 0);
+        appendMessages(res.data.messages, beforeSince === "");
     });
   }
 
@@ -267,7 +267,7 @@
         return;
       }
       currentSubject = subject;
-      sinceId = 0;
+      sinceId = "";
       $("chat-messages").innerHTML = "";
       $("lobby").classList.add("hidden");
       $("chat-panel").classList.remove("hidden");
@@ -298,7 +298,7 @@
     stopAppointmentPoll();
     lastAppointmentUiKey = null;
     currentSubject = null;
-    sinceId = 0;
+    sinceId = "";
     clearMessagesUi();
     $("chat-panel").classList.add("hidden");
     $("lobby").classList.remove("hidden");
@@ -700,7 +700,7 @@
   }
 
   function clearMessagesUi() {
-    sinceId = 0;
+    sinceId = "";
     var box = $("chat-messages");
     if (box) box.innerHTML = "";
   }
@@ -838,7 +838,7 @@
   }
 
   function bindNavName() {
-    return fetch("/api/me", { credentials: "same-origin" }).then(function (r) {
+    return fetch("/api/me", { credentials: "include" }).then(function (r) {
       if (r.status === 401) {
         window.location.replace("/login.html?next=/chat.html&flash=needlogin");
         return null;
@@ -888,7 +888,7 @@
     roomsTimer = setInterval(loadRooms, POLL_ROOMS_MS);
   });
 
-  fetch("/api/me", { credentials: "same-origin" }).then(function (r) {
+  fetch("/api/me", { credentials: "include" }).then(function (r) {
     return r.json();
   }).then(function (data) {
     userRole = data.role;

@@ -4,7 +4,12 @@ venv
 __pycache__
 *.pyc
 users.db
+seed.db
+*.db
 .env
+node_modules
+.wrangler
+flutter_app/.wrangler
 docs/node_modules
 flutter_app/build
 *.log

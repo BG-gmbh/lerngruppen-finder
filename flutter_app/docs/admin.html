@@ -330,7 +330,7 @@
               }
               fetch("/api/admin/users/class", {
                 method: "POST",
-                credentials: "same-origin",
+                credentials: "include",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ user_id: user.id, class_name: nextClass }),
               })
@@ -364,7 +364,7 @@
             }
             fetch("/api/admin/users/password", {
               method: "POST",
-              credentials: "same-origin",
+              credentials: "include",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ user_id: user.id, password: pwd }),
             })
@@ -402,7 +402,7 @@
             }
             fetch("/api/admin/users/ban", {
               method: "POST",
-              credentials: "same-origin",
+              credentials: "include",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ user_id: user.id, ban: nextBan, message: message }),
             })
@@ -425,7 +425,7 @@
       }
 
       function loadUsers() {
-        fetch("/api/admin/users", { credentials: "same-origin" })
+        fetch("/api/admin/users", { credentials: "include" })
           .then(function (r) {
             if (r.status === 401 || r.status === 403) return null;
             return r.json();
@@ -488,7 +488,7 @@
         var schoolInput = document.getElementById("logo-school");
         var school = schoolInput ? (schoolInput.value || "").trim() : "";
         var query = (isDev && school) ? ("?school=" + encodeURIComponent(school)) : "";
-        fetch("/api/admin/app-settings" + query, { credentials: "same-origin" })
+        fetch("/api/admin/app-settings" + query, { credentials: "include" })
           .then(function (r) { return r.ok ? r.json() : null; })
           .then(function (data) {
             if (!data) return;
@@ -525,7 +525,7 @@
           }
           fetch("/api/admin/app-settings", {
             method: "POST",
-            credentials: "same-origin",
+            credentials: "include",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
           })
@@ -552,7 +552,7 @@
       }
 
       function loadCodes() {
-        fetch("/api/admin/invite-codes", { credentials: "same-origin" })
+        fetch("/api/admin/invite-codes", { credentials: "include" })
           .then(function (r) {
             if (r.status === 401 || r.status === 403) return null;
             return r.json();
@@ -612,7 +612,7 @@
                 }
                 fetch("/api/admin/invite-codes/" + encodeURIComponent(c.code), {
                   method: "DELETE",
-                  credentials: "same-origin",
+                  credentials: "include",
                 })
                   .then(function (r) {
                     return r.json().then(function (d) {
@@ -680,7 +680,7 @@
         if (school) {
           url += "?school=" + encodeURIComponent(school);
         }
-        fetch(url, { credentials: "same-origin" })
+        fetch(url, { credentials: "include" })
           .then(function (r) {
             if (r.status === 401 || r.status === 403) return null;
             return r.json();
@@ -725,7 +725,7 @@
         }
         fetch("/api/admin/invite-codes", {
           method: "POST",
-          credentials: "same-origin",
+          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ school: school, class_name: className, role: role }),
         })
@@ -772,7 +772,7 @@
         var schoolLimit = Number(document.getElementById("code-limit-school-limit").value || 0);
         fetch("/api/admin/invite-code-limits", {
           method: "POST",
-          credentials: "same-origin",
+          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             school: school,
@@ -796,7 +796,7 @@
         loadInviteCodeLimits((this.value || "").trim());
       });
 
-      fetch("/api/me", { credentials: "same-origin" }).then(function (r) {
+      fetch("/api/me", { credentials: "include" }).then(function (r) {
         return r.json();
       }).then(function (data) {
         if (data && data.username) {
@@ -904,13 +904,13 @@
           save.className = "btn btn-small";
           save.textContent = "Punkte speichern";
           save.addEventListener("click", function () {
-            var uid = parseInt(inpPts.getAttribute("data-user-id"), 10);
+            var uid = inpPts.getAttribute("data-user-id");
             var sub = inpPts.getAttribute("data-subject");
             var pts = parseInt(inpPts.value, 10);
             if (isNaN(pts)) pts = 0;
             fetch("/api/admin/subject-score", {
               method: "PUT",
-              credentials: "same-origin",
+              credentials: "include",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 user_id: uid,
@@ -947,7 +947,7 @@
       }
 
       function loadChats() {
-        fetch("/api/admin/chats", { credentials: "same-origin" })
+        fetch("/api/admin/chats", { credentials: "include" })
           .then(function (r) {
             if (r.status === 401 || r.status === 403) return null;
             return r.json();
@@ -992,7 +992,7 @@
                   }
                   fetch("/api/admin/delete_chat/" + encodeURIComponent(c.subject), {
                     method: "DELETE",
-                    credentials: "same-origin",
+                    credentials: "include",
                   })
                     .then(function (r) {
                       return r.json().then(function (d) {
@@ -1012,7 +1012,7 @@
               });
             }
             loadChatReports();
-            return fetch("/api/admin/ratings", { credentials: "same-origin" });
+            return fetch("/api/admin/ratings", { credentials: "include" });
           })
           .then(function (r) {
             if (!r || r.status === 401 || r.status === 403) return null;
@@ -1024,7 +1024,7 @@
       }
 
       function loadChatReports() {
-        fetch("/api/admin/chat-reports", { credentials: "same-origin" })
+        fetch("/api/admin/chat-reports", { credentials: "include" })
           .then(function (r) {
             if (r.status === 401 || r.status === 403) return null;
             return r.json();
@@ -1063,7 +1063,7 @@
               done.addEventListener("click", function () {
                 fetch("/api/admin/chat-reports/" + rpt.id + "/resolve", {
                   method: "POST",
-                  credentials: "same-origin",
+                  credentials: "include",
                 })
                   .then(function (r) {
                     return r.json().then(function (d) {
@@ -1115,7 +1115,7 @@
       }
 
       function loadShop() {
-        fetch("/api/admin/shop", { credentials: "same-origin" })
+        fetch("/api/admin/shop", { credentials: "include" })
           .then(function (r) {
             if (r.status === 401 || r.status === 403) return null;
             return r.json();
@@ -1161,7 +1161,7 @@
                 if (!window.confirm("Eintrag wirklich löschen?")) return;
                 fetch("/api/admin/shop/" + it.id, {
                   method: "DELETE",
-                  credentials: "same-origin",
+                  credentials: "include",
                 })
                   .then(function (r) {
                     return r.json().then(function (d) {
@@ -1191,7 +1191,7 @@
       function loadLadenPurchases() {
         var ul = document.getElementById("laden-purchases-list");
         if (!ul) return;
-        fetch("/api/admin/laden-purchases", { credentials: "same-origin" })
+        fetch("/api/admin/laden-purchases", { credentials: "include" })
           .then(function (r) {
             if (r.status === 401 || r.status === 403) return null;
             return r.json();
@@ -1228,7 +1228,7 @@
       }
 
       function loadTeachers() {
-        fetch("/api/admin/teachers", { credentials: "same-origin" })
+        fetch("/api/admin/teachers", { credentials: "include" })
           .then(function (r) {
             if (r.status === 401 || r.status === 403) return null;
             return r.json();
@@ -1262,7 +1262,7 @@
                 if (!window.confirm("Eintrag wirklich löschen?")) return;
                 fetch("/api/admin/teachers/" + t.id, {
                   method: "DELETE",
-                  credentials: "same-origin",
+                  credentials: "include",
                 })
                   .then(function (r) {
                     return r.json().then(function (d) {
@@ -1305,7 +1305,7 @@
       }
 
       function loadMailStatus() {
-        fetch("/api/admin/mail-status", { credentials: "same-origin" })
+        fetch("/api/admin/mail-status", { credentials: "include" })
           .then(function (r) {
             if (r.status === 401 || r.status === 403) return null;
             return r.json();
@@ -1320,7 +1320,7 @@
         var email = document.getElementById("mail-test-email").value.trim();
         fetch("/api/admin/mail-test", {
           method: "POST",
-          credentials: "same-origin",
+          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: email }),
         })
@@ -1346,7 +1346,7 @@
         var school = document.getElementById("teacher-school").value.trim();
         fetch("/api/admin/teachers", {
           method: "POST",
-          credentials: "same-origin",
+          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: email, display_name: display_name, school: school }),
         })
@@ -1394,7 +1394,7 @@
         }
         fetch(url, {
           method: method,
-          credentials: "same-origin",
+          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         })

@@ -51,7 +51,7 @@
         return d.innerHTML;
       }
 
-      fetch("/api/shop", { credentials: "same-origin" })
+      fetch("/api/shop", { credentials: "include" })
         .then(function (r) {
           if (r.status === 401) {
             window.location.href =
@@ -112,7 +112,7 @@
                 }
                 fetch("/api/shop/purchase", {
                   method: "POST",
-                  credentials: "same-origin",
+                  credentials: "include",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ item_id: it.id }),
                 })

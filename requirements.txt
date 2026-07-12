@@ -2,7 +2,8 @@ Flask==3.0.3
 Werkzeug==3.0.3
 python-dotenv==1.0.1
 gunicorn==21.2.0
-pysqlite3-binary==0.5.4
+pymongo==4.10.1
+dnspython==2.7.0
 openai==1.54.0
 # openai 1.54.0 uebergibt intern proxies= an httpx; ab httpx 0.28 entfernt ->
 # TypeError beim Erstellen des OpenAI-Clients. Auf kompatible httpx-Version pinnen.

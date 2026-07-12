@@ -237,7 +237,7 @@
     }
 
     function loadPlaces() {
-      fetch("/api/learning-places", { credentials: "same-origin" })
+      fetch("/api/learning-places", { credentials: "include" })
         .then(function (r) {
           if (!r.ok) return null;
           return r.json();
@@ -249,7 +249,7 @@
       e.preventDefault();
       fetch("/api/learning-places", {
         method: "POST",
-        credentials: "same-origin",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: document.getElementById("place-name").value,
@@ -272,7 +272,7 @@
         });
     });
 
-    fetch("/api/me", { credentials: "same-origin" })
+    fetch("/api/me", { credentials: "include" })
       .then(function (r) {
         if (r.status === 401) {
           window.location.replace("/login.html?next=/dashboard.html&flash=needlogin");
