@@ -8,9 +8,9 @@
     "dev": "wrangler dev"
   },
   "dependencies": {
-    "@cloudflare/containers": "^0.0.44"
+    "@cloudflare/containers": "^0.3.7"
   },
   "devDependencies": {
-    "wrangler": "^4.20.0"
+    "wrangler": "^4.110.0"
   }
 }
