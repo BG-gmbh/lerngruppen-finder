@@ -227,8 +227,8 @@ def register_shop_routes(app, get_db, admin_api, login_required, login_required_
         user_row = db.users.find_one(
             {"_id": oid(uid)}, {"school": 1, "class_name": 1}
         )
-        user_school = (user_row["school"] if user_row else "") or ""
-        user_class = _normalize_class_name(user_row["class_name"] if user_row else "") or ""
+        user_school = (user_row.get("school") if user_row else "") or ""
+        user_class = _normalize_class_name((user_row.get("class_name") if user_row else "")) or ""
         rows = list(
             db.shop_items.find(
                 {
@@ -265,8 +265,8 @@ def register_shop_routes(app, get_db, admin_api, login_required, login_required_
         user_row = db.users.find_one(
             {"_id": oid(uid)}, {"school": 1, "class_name": 1}
         )
-        user_school = (user_row["school"] if user_row else "") or ""
-        user_class = _normalize_class_name(user_row["class_name"] if user_row else "") or ""
+        user_school = (user_row.get("school") if user_row else "") or ""
+        user_class = _normalize_class_name((user_row.get("class_name") if user_row else "")) or ""
         item_school = (row["school"] or "").strip()
         item_class = _normalize_class_name(row["class_name"]) or ""
         if item_school and item_school != user_school:

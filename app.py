@@ -323,6 +323,35 @@ def utcnow():
     return datetime.now(timezone.utc)
 
 
+def _new_user_defaults():
+    """Vollstaendiger Default-Feldsatz eines users-Dokuments.
+
+    Unter SQLite hatten diese Spalten NOT NULL DEFAULT-Werte, sodass Lesezugriffe
+    wie row["school"] immer einen Wert lieferten. MongoDB ist schemalos – fehlt
+    ein Feld, wirft row["feld"] KeyError. Daher werden neue Nutzer-Dokumente mit
+    diesem Default-Satz angelegt (explizit gesetzte Felder ueberschreiben ihn).
+    """
+    defaults = {
+        "role": "user",
+        "display_name": "",
+        "onboarded": 0,
+        "banned": 0,
+        "banned_message": "Dein Konto wurde gesperrt. Bitte den Admin kontaktieren.",
+        "school": "",
+        "class_name": "",
+        "contact_email": None,
+        "notify_laden_email": 0,
+        "avatar_url": "",
+        "iserv_email": "",
+        "created_at": utcnow(),
+    }
+    for col in CHAT_LEVEL_COLUMN.values():
+        defaults[col] = "noob"
+    for col in CHAT_VERIFIED_COLUMN.values():
+        defaults[col] = 0
+    return defaults
+
+
 def init_db():
     """Legt Indizes an. Ersatz für die frühere SQLite-Schema-/Migrationslogik.
 
@@ -759,6 +788,7 @@ def setup_create():
     else:
         try:
             res = db.users.insert_one({
+            **_new_user_defaults(),
                 "username": username,
                 "password_hash": password_hash,
                 "level_german": lg, "level_math": lm, "level_english": le,
@@ -812,6 +842,7 @@ def api_setup_create():
     else:
         try:
             res = db.users.insert_one({
+            **_new_user_defaults(),
                 "username": username,
                 "password_hash": password_hash,
                 "level_german": "pro", "level_math": "pro", "level_english": "pro",
@@ -890,6 +921,7 @@ def admin_create_user():
         )
     try:
         db.users.insert_one({
+            **_new_user_defaults(),
             "username": username,
             "password_hash": generate_password_hash(password),
             "level_german": lg, "level_math": lm, "level_english": le,
@@ -1586,6 +1618,7 @@ def invite_redeem():
     invite_class = class_name_for_role(invite_role, inv.get("class_name")) or ""
     try:
         res = db.users.insert_one({
+            **_new_user_defaults(),
             "username": username,
             "password_hash": generate_password_hash(password),
             "level_german": "noob", "level_math": "noob", "level_english": "noob",
@@ -1642,6 +1675,7 @@ def api_invite_redeem():
     invite_class = class_name_for_role(invite_role, inv.get("class_name")) or ""
     try:
         res = db.users.insert_one({
+            **_new_user_defaults(),
             "username": username,
             "password_hash": generate_password_hash(password),
             "level_german": "noob", "level_math": "noob", "level_english": "noob",
@@ -3034,7 +3068,14 @@ from shop import register_shop_routes
 register_shop_routes(app, get_db, admin_api, login_required, login_required_api)
 
 with app.app_context():
-    init_db()
+    # Best-effort: Indizes beim Start anlegen. Faellt die DB-Verbindung aus oder
+    # ist MONGODB_URI (noch) nicht gesetzt (z. B. beim Import in Tests/CI), darf
+    # der Import nicht hart scheitern. ensure_indexes() ist idempotent und laeuft
+    # beim naechsten Start erneut.
+    try:
+        init_db()
+    except Exception as exc:  # pragma: no cover - nur Startup-Robustheit
+        app.logger.warning("init_db/ensure_indexes beim Start uebersprungen: %s", exc)
 
 
 if __name__ == "__main__":

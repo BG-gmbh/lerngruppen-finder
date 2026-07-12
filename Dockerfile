@@ -19,7 +19,8 @@ ENV PORT=8080
 ENV FLASK_APP=app.py
 ENV FLASK_ENV=production
 
-# --preload: App wird einmalig im Master importiert -> init_db() (Anlegen der
-# MongoDB-Indizes) laeuft genau einmal, bevor die Worker geforkt werden. Der
-# Datenbank-Zustand liegt extern in MongoDB Atlas; der Container ist zustandslos.
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT} app:app --workers 2 --preload"]
+# Kein --preload: jeder Worker importiert die App nach dem Fork und legt seinen
+# EIGENEN MongoClient an -> fork-sicher (ein im Master erzeugter Client waere es
+# nicht). init_db() (Index-Anlegen) laeuft dadurch pro Worker, ist aber idempotent.
+# Der Datenbank-Zustand liegt extern in MongoDB Atlas; der Container ist zustandslos.
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT} app:app --workers 2"]
