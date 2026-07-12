@@ -13,6 +13,19 @@ export class Backend extends Container {
   // Keep a warm instance for a while to avoid cold starts between requests,
   // then let it sleep to save resources.
   sleepAfter = "30m";
+
+  constructor(ctx, env, options) {
+    super(ctx, env, options);
+    // WICHTIG: Worker-Secrets/Vars werden NICHT automatisch in den Container
+    // gereicht. Wir uebergeben alle string-wertigen env-Eintraege (MONGODB_URI,
+    // FLASK_SECRET_KEY, OPENAI_API_KEY, SMTP_*, SESSION_COOKIE_*,
+    // FLASK_ALLOWED_ORIGINS, MONGODB_DB, ...) als Prozess-Umgebung an gunicorn.
+    // Nicht-String-Bindings (z. B. das Durable-Object-Binding BACKEND) werden
+    // ausgefiltert.
+    this.envVars = Object.fromEntries(
+      Object.entries(env).filter(([, value]) => typeof value === "string")
+    );
+  }
 }
 
 export default {

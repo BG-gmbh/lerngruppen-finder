@@ -2,7 +2,9 @@
   // Cloudflare Worker + Container config for the Flask backend (api.group-ly.tech).
   // Deploy with: npx wrangler deploy
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "grouply-api",
+  // Muss dem Namen des verbundenen Cloudflare-Workers-Projekts entsprechen,
+  // sonst ueberschreibt das CI-System den Namen und meldet einen Mismatch.
+  "name": "lerngruppen-finder",
   "main": "worker/index.js",
   "compatibility_date": "2025-05-01",
 
@@ -11,7 +13,7 @@
     {
       "class_name": "Backend",
       "image": "./Dockerfile",
-      "instance_type": "standard",
+      "instance_type": "standard-1",
       // Sessions are cookie-based and all state is in Atlas, so more than one
       // instance is safe. Start conservative.
       "max_instances": 2
