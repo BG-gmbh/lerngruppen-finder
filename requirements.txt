@@ -4,6 +4,9 @@ python-dotenv==1.0.1
 gunicorn==21.2.0
 pymongo==4.10.1
 dnspython==2.7.0
+# Lokaler, pymongo-kompatibler Fallback-Store: wird verwendet, wenn kein
+# (erreichbares) MONGODB_URI gesetzt ist. Siehe db_mongo.py.
+mongomock==4.3.0
 openai==1.54.0
 # openai 1.54.0 uebergibt intern proxies= an httpx; ab httpx 0.28 entfernt ->
 # TypeError beim Erstellen des OpenAI-Clients. Auf kompatible httpx-Version pinnen.

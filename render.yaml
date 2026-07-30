@@ -5,14 +5,17 @@ services:
     plan: starter
     dockerfilePath: Dockerfile
     autoDeploy: true
-    # Kein persistenter Datentraeger mehr: der Zustand liegt extern in MongoDB
-    # Atlas, der Container ist zustandslos.
+    # Persistenz: ist MONGODB_URI gesetzt und erreichbar, liegt der Zustand
+    # extern in MongoDB Atlas (Container zustandslos). Ohne (erreichbares)
+    # MONGODB_URI faellt die App auf einen lokalen In-Process-Store zurueck –
+    # die Seite laeuft dann, die Daten sind aber nicht persistent.
     envVars:
       - key: PORT
         value: "8080"
 
-      # --- MongoDB Atlas ---
-      # MONGODB_URI wird im Render-Dashboard gesetzt (sync: false -> nicht im Repo).
+      # --- MongoDB Atlas (optional) ---
+      # MONGODB_URI wird im Render-Dashboard gesetzt (sync: false -> nicht im
+      # Repo). Ist es gesetzt und erreichbar -> MongoDB; sonst lokaler Fallback.
       - key: MONGODB_URI
         sync: false
       - key: MONGODB_DB

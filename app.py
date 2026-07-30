@@ -15,9 +15,10 @@ from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from bson import ObjectId
+
 from pymongo.errors import DuplicateKeyError
 
-from db_mongo import ensure_indexes, get_db as _mongo_db, oid
+from db_mongo import active_backend, ensure_indexes, get_db as _mongo_db, oid
 from mailer import send_smtp_mail, smtp_status
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
@@ -3063,16 +3064,25 @@ def uploaded_avatar(filename):
     return send_from_directory(str(AVATAR_UPLOAD_DIR), filename)
 
 
+@app.route("/healthz")
+def healthz():
+    """Health-/Status-Endpoint. Zeigt an, welches DB-Backend aktiv ist:
+    "mongodb" (Atlas-Secret gesetzt und erreichbar) oder "local" (Fallback).
+    """
+    return jsonify({"status": "ok", "db_backend": active_backend()})
+
+
 from shop import register_shop_routes
 
 register_shop_routes(app, get_db, admin_api, login_required, login_required_api)
 
 with app.app_context():
-    # Best-effort: Indizes beim Start anlegen. Faellt die DB-Verbindung aus oder
-    # ist MONGODB_URI (noch) nicht gesetzt (z. B. beim Import in Tests/CI), darf
-    # der Import nicht hart scheitern. ensure_indexes() ist idempotent und laeuft
-    # beim naechsten Start erneut.
+    # Best-effort: Indizes beim Start anlegen. Ist MONGODB_URI gesetzt und
+    # erreichbar, laeuft das gegen Atlas; sonst gegen den lokalen Fallback-Store
+    # (mongomock). Faellt beides aus (z. B. beim Import in Tests/CI), darf der
+    # Import nicht hart scheitern. ensure_indexes() ist idempotent.
     try:
+        app.logger.info("Datenbank-Backend beim Start: %s", active_backend())
         init_db()
     except Exception as exc:  # pragma: no cover - nur Startup-Robustheit
         app.logger.warning("init_db/ensure_indexes beim Start uebersprungen: %s", exc)

@@ -1,38 +1,105 @@
-"""MongoDB-Zugriffsschicht.
+"""MongoDB-Zugriffsschicht mit lokalem Fallback.
 
 Ersetzt die frühere SQLite-Anbindung (get_db/close_db/init_db in app.py). Der
-MongoClient ist ein prozessweiter, thread-sicherer Singleton – anders als bei
-SQLite braucht es keine Verbindung pro Request und kein teardown.
+Client ist ein prozessweiter, thread-sicherer Singleton – anders als bei SQLite
+braucht es keine Verbindung pro Request und kein teardown.
+
+Zwei Backends, automatisch gewählt:
+
+  * "mongodb" – echtes MongoDB Atlas. Wird verwendet, sobald MONGODB_URI gesetzt
+    ist UND die Verbindung tatsächlich klappt (Ping beim Start).
+  * "local"   – ein in-process, pymongo-kompatibler Store (mongomock). Greift,
+    wenn kein MONGODB_URI hinterlegt ist oder die Atlas-Verbindung scheitert.
+    Damit läuft die Seite auch ohne externes MongoDB (z. B. lokal oder auf
+    Render, wenn kein Secret gesetzt ist).
+
+Achtung Fallback: Der lokale Store hält die Daten nur im Arbeitsspeicher des
+Prozesses. Bei einem Neustart des Render-Containers oder über mehrere
+Gunicorn-Worker hinweg werden die Daten NICHT geteilt/persistiert. Für echten
+Mehrbenutzerbetrieb ist MONGODB_URI zu setzen.
 
 Verbindung/Datenbank kommen aus der Umgebung:
     MONGODB_URI   z. B. mongodb+srv://user:pass@cluster.xxxxx.mongodb.net
     MONGODB_DB    Datenbankname (Default: "grouply")
 """
 
+import logging
 import os
 
-from pymongo import ASCENDING, MongoClient
+from pymongo import ASCENDING
 from pymongo.errors import DuplicateKeyError  # noqa: F401  (re-export für app.py)
 from bson import ObjectId
 from bson.errors import InvalidId
 
+log = logging.getLogger(__name__)
+
 _client = None
+# Welches Backend aktiv ist: None (noch nicht initialisiert), "mongodb" | "local".
+_backend = None
+
+# Timeout, damit ein gesetztes-aber-unerreichbares MONGODB_URI nicht ewig blockt,
+# bevor auf den lokalen Store zurückgefallen wird.
+_MONGO_TIMEOUT_MS = 5000
+
+
+def _make_mongo_client(uri):
+    """Baut einen echten MongoClient und verifiziert die Verbindung per Ping.
+
+    Gibt den Client bei Erfolg zurück, sonst None (-> lokaler Fallback).
+    """
+    try:
+        from pymongo import MongoClient
+
+        # tz_aware: Datetimes kommen als timezone-aware (UTC) zurück, passend zu
+        # datetime.now(timezone.utc), das wir beim Schreiben verwenden.
+        client = MongoClient(
+            uri,
+            tz_aware=True,
+            serverSelectionTimeoutMS=_MONGO_TIMEOUT_MS,
+        )
+        # Erzwingt eine echte Verbindung: schlägt fehl, wenn Atlas nicht
+        # erreichbar / URI falsch ist -> wir fallen auf den lokalen Store zurück.
+        client.admin.command("ping")
+        return client
+    except Exception as exc:  # noqa: BLE001 - jede Verbindungsart soll fallbacken
+        log.warning(
+            "MONGODB_URI gesetzt, aber Verbindung fehlgeschlagen (%s) – "
+            "nutze lokalen Fallback-Store.",
+            exc,
+        )
+        return None
+
+
+def _make_local_client():
+    """In-process, pymongo-kompatibler Store als Fallback ohne echtes MongoDB."""
+    import mongomock
+
+    return mongomock.MongoClient(tz_aware=True)
 
 
 def get_client():
-    """Prozessweiter MongoClient-Singleton (lazy)."""
-    global _client
+    """Prozessweiter Client-Singleton (lazy). Wählt MongoDB oder lokalen Store."""
+    global _client, _backend
     if _client is None:
         uri = os.environ.get("MONGODB_URI")
-        if not uri:
-            raise RuntimeError(
-                "MONGODB_URI ist nicht gesetzt – ohne Datenbank-URI kann die "
-                "App nicht starten."
+        client = _make_mongo_client(uri) if uri else None
+        if client is not None:
+            _client, _backend = client, "mongodb"
+            log.info("Datenbank-Backend: MongoDB (Atlas).")
+        else:
+            _client, _backend = _make_local_client(), "local"
+            log.info(
+                "Datenbank-Backend: lokaler Fallback-Store (kein/kein "
+                "erreichbares MONGODB_URI). Daten sind nicht persistent."
             )
-        # tz_aware: Datetimes kommen als timezone-aware (UTC) zurück, passend zu
-        # datetime.now(timezone.utc), das wir beim Schreiben verwenden.
-        _client = MongoClient(uri, tz_aware=True)
     return _client
+
+
+def active_backend():
+    """Gibt "mongodb" oder "local" zurück – initialisiert den Client bei Bedarf."""
+    if _backend is None:
+        get_client()
+    return _backend
 
 
 def get_db():
