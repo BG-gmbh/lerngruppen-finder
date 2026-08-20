@@ -1255,6 +1255,7 @@ def admin_user_password():
     password = data.get("password") or ""
     if len(password) < 6:
         return jsonify(error="shortpass"), 400
+    force_change = bool(data.get("force_change"))
 
     db = get_db()
     if not can_access_user(db, user_id):
@@ -1262,7 +1263,10 @@ def admin_user_password():
     row = db.users.find_one({"_id": user_id}, {"username": 1})
     db.users.update_one(
         {"_id": user_id},
-        {"$set": {"password_hash": generate_password_hash(password)}},
+        {"$set": {
+            "password_hash": generate_password_hash(password),
+            "must_change_password": force_change,
+        }},
     )
     db.api_tokens.delete_many({"user_id": user_id})
     return jsonify(ok=True, username=row["username"])
@@ -2519,6 +2523,7 @@ def _public_user_payload(db, user_id):
         "avatar_url": row.get("avatar_url") or "",
         "iserv_email": row.get("iserv_email") or "",
         "school_logo_url": school_logo_url_for(db, row.get("school") or ""),
+        "must_change_password": bool(row.get("must_change_password")),
     }
 
 
@@ -2692,6 +2697,7 @@ def profile_update():
         if row is None or not check_password_hash(row["password_hash"], cur_pwd):
             return redirect("/settings.html?flash=pwd_current_wrong")
         update_fields["password_hash"] = generate_password_hash(new_pwd)
+        update_fields["must_change_password"] = False
     db.users.update_one({"_id": uid}, {"$set": update_fields})
     session["school"] = school or ""
     return redirect("/settings.html?flash=saved")
@@ -2771,9 +2777,39 @@ def api_profile_update():
         if row is None or not check_password_hash(row["password_hash"], cur_pwd):
             return jsonify(error="pwd_current_wrong"), 400
         update_fields["password_hash"] = generate_password_hash(new_pwd)
+        update_fields["must_change_password"] = False
     db.users.update_one({"_id": uid}, {"$set": update_fields})
     session["school"] = school or ""
     return jsonify(ok=True, user=_public_user_payload(db, uid))
+
+
+@app.route("/api/must-change-password", methods=["POST"])
+@login_required_api
+def api_must_change_password():
+    data = request.get_json(silent=True) or {}
+    cur_pwd = data.get("current_password") or ""
+    new_pwd = data.get("new_password") or ""
+    new_pwd2 = data.get("new_password_confirm") or ""
+    if not cur_pwd or not new_pwd or not new_pwd2:
+        return jsonify(error="pwd_incomplete"), 400
+    if len(new_pwd) < 6:
+        return jsonify(error="shortpass"), 400
+    if new_pwd != new_pwd2:
+        return jsonify(error="mismatch"), 400
+
+    db = get_db()
+    uid = oid(session["user_id"])
+    row = db.users.find_one({"_id": uid}, {"password_hash": 1})
+    if row is None or not check_password_hash(row["password_hash"], cur_pwd):
+        return jsonify(error="pwd_current_wrong"), 400
+    db.users.update_one(
+        {"_id": uid},
+        {"$set": {
+            "password_hash": generate_password_hash(new_pwd),
+            "must_change_password": False,
+        }},
+    )
+    return jsonify(ok=True)
 
 
 @app.route("/api/learning-places", methods=["GET"])

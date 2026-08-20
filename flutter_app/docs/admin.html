@@ -279,6 +279,7 @@
 
   <script src="/js/flash.js"></script>
   <script src="/js/school-logo.js"></script>
+  <script src="/js/must-change-password.js"></script>
   <script>
     (function () {
       var buttons = document.querySelectorAll(".tab-btn");
@@ -355,6 +356,19 @@
           resetBtn.className = "btn btn-small btn-secondary";
           resetBtn.style.marginLeft = "1rem";
           resetBtn.textContent = "Passwort setzen";
+
+          var permanentChip = document.createElement("label");
+          permanentChip.style.marginLeft = "0.6rem";
+          permanentChip.style.display = "inline-flex";
+          permanentChip.style.alignItems = "center";
+          permanentChip.style.gap = "0.3rem";
+          permanentChip.style.fontSize = "0.85rem";
+          permanentChip.title = "Aus: Nutzer bekommt beim nächsten Login ein Popup und muss selbst ein neues Passwort setzen.";
+          var permanentChk = document.createElement("input");
+          permanentChk.type = "checkbox";
+          permanentChip.appendChild(permanentChk);
+          permanentChip.appendChild(document.createTextNode("Passwort dauerhaft"));
+
           resetBtn.addEventListener("click", function () {
             var pwd = window.prompt("Neues Passwort für " + user.username + " (mind. 6 Zeichen):");
             if (pwd === null) return;
@@ -366,7 +380,11 @@
               method: "POST",
               credentials: "include",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ user_id: user.id, password: pwd }),
+              body: JSON.stringify({
+                user_id: user.id,
+                password: pwd,
+                force_change: !permanentChk.checked,
+              }),
             })
               .then(function (r) {
                 return r.json().then(function (data) {
@@ -378,10 +396,16 @@
                   window.alert("Fehler beim Setzen des Passworts.");
                   return;
                 }
-                window.alert("Passwort wurde gesetzt.");
+                window.alert(
+                  "Passwort wurde gesetzt." +
+                    (permanentChk.checked
+                      ? ""
+                      : " " + user.username + " muss es beim nächsten Login selbst neu setzen.")
+                );
               });
           });
           li.appendChild(resetBtn);
+          li.appendChild(permanentChip);
 
           var btn = document.createElement("button");
           btn.type = "button";
