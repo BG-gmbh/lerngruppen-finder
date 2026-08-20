@@ -25,6 +25,7 @@ Verbindung/Datenbank kommen aus der Umgebung:
 
 import logging
 import os
+import time
 
 from pymongo import ASCENDING
 from pymongo.errors import DuplicateKeyError  # noqa: F401  (re-export für app.py)
@@ -36,10 +37,19 @@ log = logging.getLogger(__name__)
 _client = None
 # Welches Backend aktiv ist: None (noch nicht initialisiert), "mongodb" | "local".
 _backend = None
+_last_retry_at = None
 
 # Timeout, damit ein gesetztes-aber-unerreichbares MONGODB_URI nicht ewig blockt,
 # bevor auf den lokalen Store zurückgefallen wird.
 _MONGO_TIMEOUT_MS = 5000
+
+# Atlas M0-Cluster pausieren nach Inaktivität und brauchen beim Aufwachen oft
+# laenger als _MONGO_TIMEOUT_MS. Ohne Retry bliebe ein Worker, der genau in
+# diesem Moment zuerst verbindet, fuer seine gesamte Lebensdauer auf dem
+# lokalen (nicht geteilten) Fallback haengen -> je nach Gunicorn-Worker
+# unterschiedliche, inkonsistente Daten. Deshalb hier alle _RETRY_COOLDOWN_S
+# erneut versuchen, auf Atlas umzuschwenken.
+_RETRY_COOLDOWN_S = 20
 
 
 def _make_mongo_client(uri):
@@ -79,19 +89,34 @@ def _make_local_client():
 
 def get_client():
     """Prozessweiter Client-Singleton (lazy). Wählt MongoDB oder lokalen Store."""
-    global _client, _backend
+    global _client, _backend, _last_retry_at
+    uri = os.environ.get("MONGODB_URI")
     if _client is None:
-        uri = os.environ.get("MONGODB_URI")
         client = _make_mongo_client(uri) if uri else None
         if client is not None:
             _client, _backend = client, "mongodb"
             log.info("Datenbank-Backend: MongoDB (Atlas).")
         else:
             _client, _backend = _make_local_client(), "local"
+            _last_retry_at = time.monotonic()
             log.info(
                 "Datenbank-Backend: lokaler Fallback-Store (kein/kein "
                 "erreichbares MONGODB_URI). Daten sind nicht persistent."
             )
+        return _client
+
+    if _backend == "local" and uri:
+        now = time.monotonic()
+        if _last_retry_at is None or (now - _last_retry_at) >= _RETRY_COOLDOWN_S:
+            _last_retry_at = now
+            client = _make_mongo_client(uri)
+            if client is not None:
+                _client, _backend = client, "mongodb"
+                log.info(
+                    "Datenbank-Backend: nach Fallback erfolgreich auf MongoDB "
+                    "(Atlas) umgeschwenkt. Waehrend des lokalen Fallbacks "
+                    "angelegte Daten dieses Workers sind NICHT uebernommen."
+                )
     return _client
 
 
