@@ -9,6 +9,10 @@ services:
     # extern in MongoDB Atlas (Container zustandslos). Ohne (erreichbares)
     # MONGODB_URI faellt die App auf einen lokalen In-Process-Store zurueck –
     # die Seite laeuft dann, die Daten sind aber nicht persistent.
+    # Custom Domains (Render-Dashboard -> Settings -> Custom Domains):
+    #   group-ly.tech, www.group-ly.tech
+    # Ein einzelner Service liefert Frontend (flutter_app/docs) und API unter
+    # derselben Origin aus -> kein Split-Origin, keine Cross-Site-Cookies noetig.
     envVars:
       - key: PORT
         value: "8080"
@@ -25,14 +29,11 @@ services:
       # Einmalig generierter Secret Key (bleibt ueber Deploys stabil).
       - key: FLASK_SECRET_KEY
         generateValue: true
-      # Split-Origin: Frontend (group-ly.tech) und API (api.group-ly.tech) sind
-      # verschiedene Subdomains -> Session-Cookie ueber die Root-Domain teilen.
+      # Same-Origin-Betrieb: nur Secure-Cookies erzwingen (HTTPS). Kein
+      # SESSION_COOKIE_DOMAIN / FLASK_ALLOWED_ORIGINS mehr noetig, da Frontend
+      # und API vom selben Service unter derselben Domain kommen.
       - key: SESSION_COOKIE_SECURE
         value: "1"
-      - key: SESSION_COOKIE_DOMAIN
-        value: .group-ly.tech
-      - key: FLASK_ALLOWED_ORIGINS
-        value: https://group-ly.tech,https://www.group-ly.tech
 
       # --- Zeugnis-Auslesung (GPT) ---
       - key: OPENAI_API_KEY

@@ -61,12 +61,13 @@ STATIC_DIR = Path(__file__).resolve().parent / "flutter_app" / "docs"
 app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="")
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-nur-lokal-bitte-aendern")
 
-# Split-Origin-Betrieb: Frontend (group-ly.tech, Cloudflare Pages) und Backend
-# (api.group-ly.tech, Cloudflare Container) sind verschiedene Origins. Damit der
-# Session-Cookie beim cross-site fetch (credentials: "include") mitgeschickt
-# wird, braucht es SameSite=None + Secure. SESSION_COOKIE_DOMAIN erlaubt das
-# Teilen ueber Subdomains hinweg. Lokal (COOKIE_SECURE nicht gesetzt) bleibt es
-# bei den Flask-Defaults (Lax, kein Secure), damit http://localhost funktioniert.
+# Ein Render-Service liefert Frontend (flutter_app/docs) und API unter
+# derselben Origin aus -> normalerweise same-origin, SameSite=Lax reicht.
+# SESSION_COOKIE_SECURE=1 (Render/Prod) erzwingt trotzdem Secure+SameSite=None,
+# das bleibt kompatibel falls doch mal cross-site zugegriffen wird (z. B.
+# SESSION_COOKIE_DOMAIN/FLASK_ALLOWED_ORIGINS lokal gesetzt). Lokal (COOKIE_SECURE
+# nicht gesetzt) bleibt es bei den Flask-Defaults (Lax, kein Secure), damit
+# http://localhost funktioniert.
 _cookie_secure = os.environ.get("SESSION_COOKIE_SECURE", "").lower() in ("1", "true", "yes")
 if _cookie_secure:
     app.config.update(

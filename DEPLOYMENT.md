@@ -1,13 +1,22 @@
 # Deployment Guide
 
 ```
-group-ly.tech        -> Cloudflare Pages   (static site, flutter_app/docs)
-api.group-ly.tech    -> Render             (Docker: gunicorn/Flask)
-                          └─ MongoDB Atlas  (app data)
+group-ly.tech, www.group-ly.tech, api.group-ly.tech (optional alias)
+    -> Render (single Docker service: gunicorn/Flask)
+        - serves the static frontend (flutter_app/docs)
+        - serves the JSON API
+        - talks to MongoDB Atlas (app data)
 ```
 
-The Flask app is stateless (all data lives in MongoDB Atlas), so the backend is
-a plain Docker web service with no persistent disk.
+One Render web service builds the `Dockerfile` and serves everything: `app.py`
+sets `static_folder` to `flutter_app/docs` and has routes (`/`, `/dashboard`,
+`/settings`, `/chat`, `/setup`, `/admin`, `/einladung/...`) that hand back the
+matching HTML file, so the same Flask/gunicorn process is both the site and
+the API. There is no separate frontend host, no CORS, and no cross-subdomain
+cookie dance — everything is same-origin.
+
+The app itself is stateless (all data lives in MongoDB Atlas), so the service
+runs with no persistent disk.
 
 ## Database: MongoDB Atlas
 
@@ -26,7 +35,7 @@ a plain Docker web service with no persistent disk.
 
 Indexes are created automatically on app startup (`init_db()` → `ensure_indexes()`).
 
-## Backend: Render (`api.group-ly.tech`)
+## App + site: Render
 
 Render builds the existing `Dockerfile` (gunicorn on `$PORT`). Config is in
 `render.yaml`; secrets are set in the Render dashboard (never in the repo).
@@ -35,39 +44,37 @@ Environment variables (Render → service → Environment):
 - `MONGODB_URI` — the Atlas connection string  ⚠️ required
 - `MONGODB_DB` — `grouply` (already defaulted in render.yaml)
 - `FLASK_SECRET_KEY` — Render can generate it (render.yaml `generateValue`)
-- `SESSION_COOKIE_SECURE=1`, `SESSION_COOKIE_DOMAIN=.group-ly.tech`
-- `FLASK_ALLOWED_ORIGINS=https://group-ly.tech,https://www.group-ly.tech`
+- `SESSION_COOKIE_SECURE=1` — Secure cookies over HTTPS (already in render.yaml)
 - `OPENAI_API_KEY`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`
+
+`SESSION_COOKIE_DOMAIN` / `FLASK_ALLOWED_ORIGINS` are only needed if you ever
+split the frontend onto a different origin again — leave them unset for the
+normal same-origin setup.
 
 Render auto-deploys on push (`autoDeploy: true`). The optional
 `.github/workflows/backend-deploy.yml` also pokes the Render deploy API
 (`RENDER_API_KEY` + `RENDER_SERVICE_ID` secrets).
 
-Point `api.group-ly.tech` at the Render service (Render dashboard → Custom
-Domains → add `api.group-ly.tech`, then create the DNS record).
+### Custom domains
 
-## Frontend: Cloudflare Pages (`group-ly.tech`)
+In the Render dashboard → service → Settings → Custom Domains, add:
+- `group-ly.tech`
+- `www.group-ly.tech`
+- `api.group-ly.tech` (optional — only if something still hardcodes the old
+  API subdomain; it resolves to the exact same service)
 
-Static site = `flutter_app/docs`. Deploy via
-`.github/workflows/pages-deploy.yml` (`wrangler pages deploy flutter_app/docs`)
-or a Pages project connected to the repo.
+For each domain Render shows the DNS record to create. At your DNS provider
+for `group-ly.tech`:
+- Apex (`group-ly.tech`): Render will give you either an A record (their
+  anycast IP) or ask you to use an ALIAS/ANAME if your DNS host supports it.
+- `www` and `api`: CNAME to the hostname Render gives you (typically
+  `<service>.onrender.com`).
 
-- Create a Pages project named `lerngruppen-finder`.
-- Add custom domain `group-ly.tech`.
-- `flutter_app/docs/js/config.js` auto-targets `https://api.group-ly.tech` in
-  production and stays same-origin on localhost.
+Wait for each domain to show "Verified" in Render (DNS propagation + automatic
+TLS certificate issuance).
 
-## Cross-subdomain login
-
-Site and API are different subdomains, so the Flask session cookie is issued
-`SameSite=None; Secure; Domain=.group-ly.tech` (via the `SESSION_COOKIE_*` env
-vars) and CORS sends `Access-Control-Allow-Credentials: true`. Frontend fetches
-use `credentials: "include"`.
-
-⚠️ If `api.group-ly.tech` is proxied through Cloudflare (orange cloud), turn OFF
-**Bot Fight Mode** (Security → Bots) for the zone, or add a WAF rule to skip the
-Managed Challenge for `api.group-ly.tech` — otherwise API/`fetch` calls get the
-"Just a moment…" challenge instead of your JSON.
+⚠️ Do not leave the apex domain's DNS pointed at GitHub Pages or Cloudflare
+Pages — this repo no longer publishes a separate static site there.
 
 ## Local development
 
