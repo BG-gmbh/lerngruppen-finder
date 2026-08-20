@@ -14,15 +14,15 @@ from db_mongo import get_db
 
 def main():
     if len(sys.argv) not in (2, 3):
-        print("Usage: python promote_admin.py USERNAME [user|teacher|admin|dev]", file=sys.stderr)
+        print("Usage: python promote_admin.py USERNAME [user|teacher|admin|tester|dev]", file=sys.stderr)
         sys.exit(2)
     username = sys.argv[1].strip()
     role = sys.argv[2].strip() if len(sys.argv) == 3 else "admin"
     if not username:
         print("Username empty.", file=sys.stderr)
         sys.exit(2)
-    if role not in ("user", "teacher", "admin", "dev"):
-        print("Role must be 'user', 'teacher', 'admin' or 'dev'.", file=sys.stderr)
+    if role not in ("user", "teacher", "admin", "tester", "dev"):
+        print("Role must be 'user', 'teacher', 'admin', 'tester' or 'dev'.", file=sys.stderr)
         sys.exit(2)
 
     db = get_db()

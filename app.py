@@ -24,8 +24,12 @@ from mailer import send_smtp_mail, smtp_status
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
 LEVELS = frozenset({"pro", "medium", "noob"})
-ROLES = frozenset({"dev", "admin", "teacher", "user"})
-ROLE_RANK = {"user": 0, "teacher": 1, "admin": 2, "dev": 3}
+ROLES = frozenset({"dev", "admin", "teacher", "tester", "user"})
+ROLE_RANK = {"user": 0, "teacher": 1, "admin": 2, "tester": 2, "dev": 3}
+# Tester teilt sich Rang 2 mit Admin: niemand unter Dev kann Tester anlegen
+# oder verwalten (Peer-Rang, wie Admin<->Admin), aber Tester selbst duerfen
+# nirgends schreiben (siehe admin_write_api) - Rang ist fuer sie nur relevant,
+# damit sie nicht von einem Admin verwaltet werden koennen.
 CHAT_SUBJECT_ORDER = ("german", "math", "english", "biology", "pgw", "spanish", "art")
 CHAT_SUBJECTS = frozenset(CHAT_SUBJECT_ORDER)
 CHAT_SUBJECT_LABELS = {
@@ -213,7 +217,7 @@ def normalize_class_name(raw):
 
 
 def class_name_for_role(role, raw):
-    if role in ("admin", "dev"):
+    if role in ("admin", "tester", "dev"):
         return ""
     return normalize_class_name(raw)
 
@@ -546,7 +550,7 @@ def admin_required(view):
             session.clear()
             q = urlencode({"flash": "banned", "flash_msg": msg})
             return redirect(f"/login.html?{q}")
-        if session.get("role") not in ("teacher", "admin", "dev"):
+        if session.get("role") not in ("teacher", "admin", "tester", "dev"):
             return redirect("/dashboard.html?flash=admin_only")
         return view(*args, **kwargs)
 
@@ -554,6 +558,21 @@ def admin_required(view):
 
 
 def admin_api(view):
+    """Admin-Endpunkte, die nur LESEN. Tester duerfen rein (Read-only-Rolle)."""
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not _load_api_auth_context():
+            return jsonify(error="auth"), 401
+        if session.get("role") not in ("teacher", "admin", "tester", "dev"):
+            return jsonify(error="forbidden"), 403
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+def admin_write_api(view):
+    """Wie admin_api, aber fuer schreibende Endpunkte: Tester bleiben aussen
+    vor, da die Rolle explizit auf Lesezugriff beschraenkt ist."""
     @wraps(view)
     def wrapped(*args, **kwargs):
         if not _load_api_auth_context():
@@ -599,12 +618,23 @@ def is_dev_session():
     return session.get("role") == "dev"
 
 
+def _has_full_read_access():
+    """Unbeschraenkte LESE-Sicht ueber alle Schulen/Klassen: Dev und Tester.
+
+    Tester duerfen wie Dev alles sehen, aber nirgends schreiben - siehe
+    admin_write_api fuer die Schreibsperre. Nicht fuer Autorisierungs-
+    Entscheidungen (wer darf wen bearbeiten) verwenden, dafuer bleibt
+    is_dev_session() massgeblich.
+    """
+    return session.get("role") in ("dev", "tester")
+
+
 def role_rank(role):
     return ROLE_RANK.get(role if role in ROLES else "user", 0)
 
 
 def hidden_roles_for_session():
-    if is_dev_session():
+    if _has_full_read_access():
         return []
     current_rank = role_rank(session.get("role"))
     return [role for role, rank in ROLE_RANK.items() if rank >= current_rank]
@@ -628,7 +658,7 @@ def scoped_user_filter(db):
     Gibt None zurück, wenn die Session gar nichts sehen darf (z. B. Lehrer ohne
     Klasse) – dann liefert der Aufrufer eine leere Liste.
     """
-    if is_dev_session():
+    if _has_full_read_access():
         return {}
     hidden_roles = hidden_roles_for_session()
     current_role = session.get("role", "user")
@@ -688,7 +718,7 @@ def can_set_classes():
 
 
 def school_names_for_admin(db):
-    if is_dev_session():
+    if _has_full_read_access():
         rows = db.schools.find({}, {"_id": 1})
         return sorted((r["_id"] for r in rows), key=lambda s: s.lower())
     school = admin_school(db)
@@ -873,6 +903,8 @@ def admin_page():
 @app.route("/admin/users", methods=["POST"])
 @admin_required
 def admin_create_user():
+    if session.get("role") == "tester":
+        return redirect("/dashboard.html?flash=admin_only")
     username = (request.form.get("username") or "").strip()
     password = request.form.get("password") or ""
     password2 = request.form.get("password_confirm") or ""
@@ -987,7 +1019,7 @@ def admin_user_list():
 
 
 @app.route("/api/admin/users/ban", methods=["POST"])
-@admin_api
+@admin_write_api
 def admin_user_ban():
     data = request.get_json(silent=True) or {}
     user_id = oid(data.get("user_id"))
@@ -1021,7 +1053,7 @@ def admin_user_ban():
 
 
 @app.route("/api/admin/users/class", methods=["POST"])
-@admin_api
+@admin_write_api
 def admin_user_class_update():
     if not can_set_classes():
         return jsonify(error="forbidden"), 403
@@ -1045,7 +1077,7 @@ def admin_user_class_update():
 
 
 @app.route("/api/admin/users/pro-verification", methods=["POST"])
-@admin_api
+@admin_write_api
 def admin_user_pro_verification():
     data = request.get_json(silent=True) or {}
     user_id = oid(data.get("user_id"))
@@ -1097,7 +1129,7 @@ def admin_user_pro_verification():
 
 
 @app.route("/api/admin/users/<string:user_id>", methods=["PUT"])
-@admin_api
+@admin_write_api
 def admin_user_update(user_id):
     if not is_dev_session():
         return jsonify(error="forbidden"), 403
@@ -1151,7 +1183,7 @@ def admin_schools_list():
 
 
 @app.route("/api/admin/schools", methods=["POST"])
-@admin_api
+@admin_write_api
 def admin_schools_create():
     if not is_dev_session():
         return jsonify(error="forbidden"), 403
@@ -1171,12 +1203,12 @@ def admin_schools_create():
 @admin_api
 def admin_app_settings_get():
     db = get_db()
-    school = (request.args.get("school") or "").strip() if is_dev_session() else admin_school(db)
+    school = (request.args.get("school") or "").strip() if _has_full_read_access() else admin_school(db)
     return jsonify(school_logo_url=school_logo_url_for(db, school), school=school)
 
 
 @app.route("/api/admin/app-settings", methods=["POST"])
-@admin_api
+@admin_write_api
 def admin_app_settings_post():
     data = request.get_json(silent=True) or {}
     school_logo_url = (data.get("school_logo_url") or "").strip()
@@ -1226,7 +1258,7 @@ def admin_mail_status():
 
 
 @app.route("/api/admin/mail-test", methods=["POST"])
-@admin_api
+@admin_write_api
 def admin_mail_test():
     data = request.get_json(silent=True) or {}
     recipient = _valid_contact_email(data.get("email"))
@@ -1246,7 +1278,7 @@ def admin_mail_test():
 
 
 @app.route("/api/admin/users/password", methods=["POST"])
-@admin_api
+@admin_write_api
 def admin_user_password():
     data = request.get_json(silent=True) or {}
     user_id = oid(data.get("user_id"))
@@ -1273,7 +1305,7 @@ def admin_user_password():
 
 
 @app.route("/api/admin/delete_message/<string:message_id>", methods=["DELETE"])
-@admin_api
+@admin_write_api
 def admin_delete_message(message_id):
     message_id = oid(message_id)
     if message_id is None:
@@ -1312,7 +1344,7 @@ def admin_delete_message(message_id):
 def admin_chat_reports():
     db = get_db()
     flt = {"resolved_at": None}
-    if not is_dev_session():
+    if not _has_full_read_access():
         hidden_roles = hidden_roles_for_session()
         flt["reported_school"] = admin_school(db)
         flt["reported_role"] = {"$nin": hidden_roles}
@@ -1349,7 +1381,7 @@ def admin_chat_reports():
 
 
 @app.route("/api/admin/chat-reports/<string:report_id>/resolve", methods=["POST"])
-@admin_api
+@admin_write_api
 def admin_resolve_chat_report(report_id):
     report_id = oid(report_id)
     if report_id is None:
@@ -1391,7 +1423,7 @@ def admin_get_chats():
     visible_ids = None  # None = keine Einschränkung (dev)
     report_filter_base = None  # zusätzliche Report-Filter für Nicht-Devs
     empty = False
-    if not is_dev_session():
+    if not _has_full_read_access():
         school = admin_school(db)
         hidden_roles = hidden_roles_for_session()
         user_flt = {"school": school, "role": {"$nin": hidden_roles}}
@@ -1457,7 +1489,7 @@ def admin_get_chats():
 def admin_list_ratings():
     db = get_db()
     ratings_filter = {}
-    if not is_dev_session():
+    if not _has_full_read_access():
         hidden_roles = hidden_roles_for_session()
         user_flt = {"school": admin_school(db), "role": {"$nin": hidden_roles}}
         if session.get("role") == "teacher":
@@ -1535,7 +1567,7 @@ def admin_list_ratings():
 
 
 @app.route("/api/admin/subject-score", methods=["PUT"])
-@admin_api
+@admin_write_api
 def admin_put_subject_score():
     data = request.get_json(silent=True) or {}
     subject = chat_subject_key(data.get("subject"))
@@ -1702,7 +1734,7 @@ def api_invite_redeem():
 def admin_invite_list():
     db = get_db()
     flt = {"used_at": None}
-    if not is_dev_session():
+    if not _has_full_read_access():
         flt["school"] = admin_school(db)
         if session.get("role") == "teacher":
             teacher_class = teacher_class_for_session(db)
@@ -1730,7 +1762,7 @@ def admin_invite_list():
 @admin_api
 def admin_invite_code_limits_get():
     db = get_db()
-    school = (request.args.get("school") or "").strip() if is_dev_session() else admin_school(db)
+    school = (request.args.get("school") or "").strip() if _has_full_read_access() else admin_school(db)
     payload = {
         "school": school,
         "school_limit": school_license_limit(db, school),
@@ -1741,7 +1773,7 @@ def admin_invite_code_limits_get():
 
 
 @app.route("/api/admin/invite-code-limits", methods=["POST"])
-@admin_api
+@admin_write_api
 def admin_invite_code_limits_post():
     if not is_dev_session():
         return jsonify(error="forbidden"), 403
@@ -1770,7 +1802,7 @@ def admin_invite_code_limits_post():
 
 
 @app.route("/api/admin/invite-codes", methods=["POST"])
-@admin_api
+@admin_write_api
 def admin_invite_create():
     data = request.get_json(silent=True) or {}
     school = (data.get("school") or "").strip()
@@ -1835,7 +1867,7 @@ def admin_invite_create():
 
 
 @app.route("/api/admin/invite-codes/<code>", methods=["DELETE"])
-@admin_api
+@admin_write_api
 def admin_invite_delete(code):
     code = (code or "").strip()
     if not code:
@@ -3099,7 +3131,7 @@ def healthz():
 
 from shop import register_shop_routes
 
-register_shop_routes(app, get_db, admin_api, login_required, login_required_api)
+register_shop_routes(app, get_db, admin_api, admin_write_api, login_required, login_required_api)
 
 with app.app_context():
     # Best-effort: Indizes beim Start anlegen. Ist MONGODB_URI gesetzt und

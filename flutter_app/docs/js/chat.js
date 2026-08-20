@@ -850,7 +850,7 @@
       userLevels = data;
       var nav = $("nav-username");
       if (nav) nav.textContent = data.username;
-      if (data.role === "teacher" || data.role === "admin" || data.role === "dev") {
+      if (data.role === "teacher" || data.role === "admin" || data.role === "tester" || data.role === "dev") {
         var adm = $("nav-admin");
         if (adm) adm.classList.remove("hidden");
       }

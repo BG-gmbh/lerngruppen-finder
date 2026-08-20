@@ -949,3 +949,10 @@ a:hover {
 .chip-pro .chip-level { background: var(--success); }
 .chip-medium .chip-level { background: var(--warning); }
 .chip-noob .chip-level { background: var(--muted); }
+
+/* Tester-Rolle: nur Lesezugriff im Admin-Panel. Schreibende Buttons/Formulare
+   tragen die Klasse admin-write-action und werden per body.role-readonly
+   ausgeblendet (Server blockt sie zusaetzlich, siehe admin_write_api). */
+body.role-readonly .admin-write-action {
+  display: none !important;
+}

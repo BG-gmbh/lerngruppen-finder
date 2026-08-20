@@ -286,7 +286,7 @@
         document.getElementById("welcome-name").textContent = data.display_name || data.username;
         var navName = document.getElementById("nav-username");
         if (navName) navName.textContent = data.username;
-        if (data.role === "teacher" || data.role === "admin" || data.role === "dev") {
+        if (data.role === "teacher" || data.role === "admin" || data.role === "tester" || data.role === "dev") {
           var adm = document.getElementById("nav-admin");
           if (adm) adm.classList.remove("hidden");
         }

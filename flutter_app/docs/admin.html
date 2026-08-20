@@ -27,7 +27,7 @@
     <h1 class="page-title">Administration</h1>
 
     <div class="tabs" role="tablist">
-      <button type="button" class="tab-btn is-active" role="tab" aria-selected="true" data-tab="accounts">Accounts anlegen</button>
+      <button type="button" class="tab-btn is-active admin-write-action" role="tab" aria-selected="true" data-tab="accounts">Accounts anlegen</button>
       <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="users">Nutzer verwalten</button>
       <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="chats">Chats verwalten</button>
       <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="codes">Einladungs-Codes</button>
@@ -163,7 +163,7 @@
         <p class="field-hint">0 bedeutet unbegrenzt. Pro Schule zählen alle Nutzerkonten und alle offenen Codes zusammen. Admin- und Lehrer-Codes verwenden denselben Pool.</p>
         <p><button type="submit" class="btn btn-secondary">Limits speichern</button></p>
       </form>
-      <p><button type="button" class="btn" id="btn-new-code">Neuen Code erzeugen</button></p>
+      <p><button type="button" class="btn admin-write-action" id="btn-new-code">Neuen Code erzeugen</button></p>
       <p class="muted" id="new-code-out" aria-live="polite"></p>
       <h3 class="subsection-title">Ungenutzte Codes</h3>
       <ul id="code-list" class="code-list"></ul>
@@ -173,7 +173,7 @@
       <h2 class="card-title">Laden — Einträge</h2>
       <p class="field-hint">Einträge erscheinen für eingeloggte Nutzer unter <a href="/laden.html">Laden</a>. Nur aktive Einträge sind sichtbar.</p>
 
-      <form id="shop-form" class="stack-form">
+      <form id="shop-form" class="stack-form admin-write-action">
         <input type="hidden" id="shop-edit-id" value="">
         <label>
           Titel
@@ -227,7 +227,7 @@
 
       <h3 class="subsection-title">Mailserver</h3>
       <p class="field-hint" id="mail-status">Mailserver-Status wird geladen …</p>
-      <form id="mail-test-form" class="stack-form" autocomplete="off">
+      <form id="mail-test-form" class="stack-form admin-write-action" autocomplete="off">
         <label>
           Test-E-Mail an
           <input id="mail-test-email" type="email" required maxlength="254" placeholder="name@schule.de">
@@ -236,7 +236,7 @@
       </form>
 
       <h3 class="subsection-title">Empfänger</h3>
-      <form id="teacher-form" class="stack-form" autocomplete="off">
+      <form id="teacher-form" class="stack-form admin-write-action" autocomplete="off">
         <label>
           E-Mail
           <input id="teacher-email" type="email" required maxlength="254" placeholder="lehrer@schule.de">
@@ -267,7 +267,7 @@
           Logo-URL
           <input id="logo-url" type="url" maxlength="1000" placeholder="https://…/logo.png">
         </label>
-        <button type="submit" class="btn">Logo speichern</button>
+        <button type="submit" class="btn admin-write-action">Logo speichern</button>
       </form>
       <p id="logo-status" class="muted" role="status"></p>
       <div id="logo-preview-wrap" class="hidden" style="margin-top:0.75rem;">
@@ -353,11 +353,12 @@
 
           var resetBtn = document.createElement("button");
           resetBtn.type = "button";
-          resetBtn.className = "btn btn-small btn-secondary";
+          resetBtn.className = "btn btn-small btn-secondary admin-write-action";
           resetBtn.style.marginLeft = "1rem";
           resetBtn.textContent = "Passwort setzen";
 
           var permanentChip = document.createElement("label");
+          permanentChip.className = "admin-write-action";
           permanentChip.style.marginLeft = "0.6rem";
           permanentChip.style.display = "inline-flex";
           permanentChip.style.alignItems = "center";
@@ -409,7 +410,7 @@
 
           var btn = document.createElement("button");
           btn.type = "button";
-          btn.className = "btn btn-small";
+          btn.className = "btn btn-small admin-write-action";
           btn.style.marginLeft = "1rem";
           btn.textContent = user.banned ? "Entsperren" : "Sperren";
           btn.addEventListener("click", function () {
@@ -627,7 +628,7 @@
               li.appendChild(copy);
               var del = document.createElement("button");
               del.type = "button";
-              del.className = "btn btn-small btn-secondary";
+              del.className = "btn btn-small btn-secondary admin-write-action";
               del.style.marginLeft = "0.5rem";
               del.textContent = "Löschen";
               del.addEventListener("click", function () {
@@ -733,7 +734,7 @@
         var roleHint = window.__currentRole === "admin"
           ? "user oder teacher"
           : window.__currentRole === "dev"
-            ? "user, teacher, admin oder dev"
+            ? "user, teacher, admin, tester oder dev"
             : "user";
         var role = window.prompt("Rolle für diesen Code: " + roleHint, "user");
         if (role === null) return;
@@ -742,7 +743,7 @@
           ? ["user"]
           : window.__currentRole === "admin"
             ? ["user", "teacher"]
-            : ["user", "teacher", "admin", "dev"];
+            : ["user", "teacher", "admin", "tester", "dev"];
         if (allowedRoles.indexOf(role) === -1) {
           window.alert("Diese Rolle darfst du nicht für Einladungscodes vergeben.");
           return;
@@ -827,7 +828,12 @@
           document.getElementById("nav-username").textContent = data.username;
           window.__currentRole = data.role || "user";
           window.__currentClass = data.class_name || "";
-          if (data.role === "admin" || data.role === "dev") {
+          if (data.role === "tester") {
+            document.body.classList.add("role-readonly");
+            var usersTabBtn = document.querySelector('[data-tab="users"]');
+            if (usersTabBtn) usersTabBtn.click();
+          }
+          if (data.role === "admin" || data.role === "tester" || data.role === "dev") {
             var logoTabBtn = document.getElementById("tab-btn-logo");
             if (logoTabBtn) logoTabBtn.classList.remove("hidden");
           }
@@ -853,7 +859,7 @@
               '<option value="user">User</option><option value="teacher">Lehrer</option>';
           } else if (roleSelect && data.role === "dev") {
             roleSelect.innerHTML =
-              '<option value="user">User</option><option value="teacher">Lehrer</option><option value="admin">Admin</option><option value="dev">Dev</option>';
+              '<option value="user">User</option><option value="teacher">Lehrer</option><option value="admin">Admin</option><option value="tester">Tester</option><option value="dev">Dev</option>';
           }
         }
       });
@@ -1135,7 +1141,7 @@
               li.appendChild(info);
               var edit = document.createElement("button");
               edit.type = "button";
-              edit.className = "btn btn-small";
+              edit.className = "btn btn-small admin-write-action";
               edit.style.marginLeft = "0.75rem";
               edit.textContent = "Bearbeiten";
               edit.addEventListener("click", function () {
@@ -1145,7 +1151,7 @@
               li.appendChild(edit);
               var del = document.createElement("button");
               del.type = "button";
-              del.className = "btn btn-small btn-secondary";
+              del.className = "btn btn-small btn-secondary admin-write-action";
               del.style.marginLeft = "0.5rem";
               del.textContent = "Löschen";
               del.addEventListener("click", function () {
@@ -1246,7 +1252,7 @@
               li.appendChild(span);
               var del = document.createElement("button");
               del.type = "button";
-              del.className = "btn btn-small btn-secondary";
+              del.className = "btn btn-small btn-secondary admin-write-action";
               del.style.marginLeft = "0.75rem";
               del.textContent = "Löschen";
               del.addEventListener("click", function () {

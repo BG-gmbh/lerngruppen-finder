@@ -29,6 +29,11 @@ def _is_dev():
     return session.get("role") == "dev"
 
 
+def _has_full_read_access():
+    """Wie app.py: Dev und Tester (Read-only) sehen alles."""
+    return session.get("role") in ("dev", "tester")
+
+
 def _is_teacher():
     return session.get("role") == "teacher"
 
@@ -208,7 +213,7 @@ def _row_to_item(r):
     }
 
 
-def register_shop_routes(app, get_db, admin_api, login_required, login_required_api):
+def register_shop_routes(app, get_db, admin_api, admin_write_api, login_required, login_required_api):
     @app.route("/laden.html")
     @login_required
     def laden_page():
@@ -328,7 +333,7 @@ def register_shop_routes(app, get_db, admin_api, login_required, login_required_
     def admin_shop_list():
         db = get_db()
         filt = {}
-        if not _is_dev():
+        if not _has_full_read_access():
             filt["school"] = _session_school(db)
             if _is_teacher():
                 teacher_class = _session_class(db)
@@ -341,7 +346,7 @@ def register_shop_routes(app, get_db, admin_api, login_required, login_required_
         return jsonify(items=[_row_to_item(r) for r in rows])
 
     @app.route("/api/admin/shop", methods=["POST"])
-    @admin_api
+    @admin_write_api
     def admin_shop_create():
         data = request.get_json(silent=True) or {}
         title = (data.get("title") or "").strip()
@@ -399,7 +404,7 @@ def register_shop_routes(app, get_db, admin_api, login_required, login_required_
         return jsonify(item=_row_to_item(row))
 
     @app.route("/api/admin/shop/<string:item_id>", methods=["PUT"])
-    @admin_api
+    @admin_write_api
     def admin_shop_update(item_id):
         item_id = oid(item_id)
         if item_id is None:
@@ -473,7 +478,7 @@ def register_shop_routes(app, get_db, admin_api, login_required, login_required_
         return jsonify(item=_row_to_item(row))
 
     @app.route("/api/admin/shop/<string:item_id>", methods=["DELETE"])
-    @admin_api
+    @admin_write_api
     def admin_shop_delete(item_id):
         item_id = oid(item_id)
         if item_id is None:
@@ -495,7 +500,7 @@ def register_shop_routes(app, get_db, admin_api, login_required, login_required_
     @admin_api
     def admin_laden_purchases():
         db = get_db()
-        if not _is_dev():
+        if not _has_full_read_access():
             ufilt = {"school": _session_school(db)}
             if _is_teacher():
                 teacher_class = _session_class(db)
@@ -533,7 +538,7 @@ def register_shop_routes(app, get_db, admin_api, login_required, login_required_
     def admin_teachers_list():
         db = get_db()
         filt = {}
-        if not _is_dev():
+        if not _has_full_read_access():
             filt["school"] = _session_school(db)
         rows = list(db.teacher_contacts.find(filt).sort("_id", 1))
         return jsonify(
@@ -551,7 +556,7 @@ def register_shop_routes(app, get_db, admin_api, login_required, login_required_
         )
 
     @app.route("/api/admin/teachers", methods=["POST"])
-    @admin_api
+    @admin_write_api
     def admin_teachers_create():
         data = request.get_json(silent=True) or {}
         email = (data.get("email") or "").strip().lower()
@@ -593,7 +598,7 @@ def register_shop_routes(app, get_db, admin_api, login_required, login_required_
         )
 
     @app.route("/api/admin/teachers/<string:tid>", methods=["DELETE"])
-    @admin_api
+    @admin_write_api
     def admin_teachers_delete(tid):
         tid = oid(tid)
         if tid is None:
@@ -608,7 +613,7 @@ def register_shop_routes(app, get_db, admin_api, login_required, login_required_
         return jsonify(ok=True)
 
     @app.route("/api/admin/teachers/<string:tid>", methods=["PUT"])
-    @admin_api
+    @admin_write_api
     def admin_teachers_update(tid):
         tid = oid(tid)
         if tid is None:
