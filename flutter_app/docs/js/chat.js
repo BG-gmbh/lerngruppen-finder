@@ -874,7 +874,15 @@
 
   $("chat-send-form").addEventListener("submit", sendMessage);
 
+  var navigatingViaNav = false;
+  document.querySelectorAll("header nav a").forEach(function (a) {
+    a.addEventListener("click", function () {
+      navigatingViaNav = true;
+    });
+  });
+
   window.addEventListener("pagehide", function () {
+    if (navigatingViaNav) return;
     if (!currentSubject) return;
     var blob = new Blob([JSON.stringify({ subject: currentSubject })], {
       type: "application/json",

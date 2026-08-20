@@ -485,9 +485,13 @@ def _purge_chat_non_pros_if_no_pro(db, subject):
         )
 
 
-def _clear_chat_messages_if_room_empty(db, subject):
+def _delete_chat_room_if_empty(db, subject):
+    """Raum (Stunde vorbei + alle weg, oder 0 Mitglieder) komplett aufraeumen."""
     if db.chat_presence.count_documents({"subject": subject}) == 0:
         db.chat_messages.delete_many({"subject": subject})
+        db.chat_appointments.delete_one({"_id": subject})
+        db.chat_ratings.delete_many({"subject": subject})
+        db.chat_message_reports.delete_many({"subject": subject})
 
 
 def _chat_may_use_room(db, user_id, subject):
@@ -1563,22 +1567,6 @@ def admin_put_subject_score():
     return jsonify(ok=True)
 
 
-@app.route("/api/admin/delete_chat/<subject>", methods=["DELETE"])
-@admin_api
-def admin_delete_chat(subject):
-    if not is_dev_session():
-        return jsonify(error="forbidden"), 403
-    if subject not in CHAT_SUBJECTS:
-        return jsonify(error="invalid_subject"), 400
-    db = get_db()
-    db.chat_messages.delete_many({"subject": subject})
-    db.chat_appointments.delete_many({"subject": subject})
-    db.chat_ratings.delete_many({"subject": subject})
-    db.chat_message_reports.delete_many({"subject": subject})
-    db.chat_presence.delete_many({"subject": subject})
-    return jsonify(success=True)
-
-
 @app.route("/api/setup-status", methods=["GET"])
 def setup_status():
     db = get_db()
@@ -1925,13 +1913,13 @@ def chat_rooms():
             )
             count_total = len(members)
             if count_total == 0:
-                db.chat_messages.delete_many({"subject": room_key})
+                _delete_chat_room_if_empty(db, room_key)
                 continue
             non_pro_n = sum(1 for m in members if m["level"] != "pro")
             pro_n = sum(1 for m in members if m["level"] == "pro")
             if pro_n == 0:
                 db.chat_presence.delete_many({"subject": room_key})
-                db.chat_messages.delete_many({"subject": room_key})
+                _delete_chat_room_if_empty(db, room_key)
                 continue
             has_pro = pro_n >= 1
             locked = bool(appointment_row and appointment_row.get("started") and not you_in)
@@ -2269,7 +2257,7 @@ def chat_leave():
     db.chat_presence.delete_one({"subject": subject, "user_id": oid(uid)})
     if was_pro:
         _purge_chat_non_pros_if_no_pro(db, subject)
-    _clear_chat_messages_if_room_empty(db, subject)
+    _delete_chat_room_if_empty(db, subject)
     return jsonify(ok=True)
 
 

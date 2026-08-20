@@ -130,7 +130,7 @@
 
     <section class="card tab-panel hidden" id="tab-chats" role="tabpanel">
       <h2 class="card-title">Chats verwalten</h2>
-      <p class="field-hint">Nachrichten, Termine und Bewertungen eines Fachs löschen (Nutzerkonten bleiben; gespeicherte <strong>Admin-Punkte</strong> pro Nutzer/Fach bleiben erhalten).</p>
+      <p class="field-hint">Nachrichten, Termine und Bewertungen eines Raums werden automatisch gelöscht, sobald der letzte Nutzer den Chat verlässt (gespeicherte <strong>Admin-Punkte</strong> pro Nutzer/Fach bleiben erhalten). Übersicht:</p>
       <ul id="chat-admin-list" class="code-list"></ul>
 
       <h3 class="subsection-title">Gemeldete Nachrichten</h3>
@@ -975,39 +975,6 @@
                   (c.report_count != null ? c.report_count : 0) +
                   " Meldung(en)";
                 li.appendChild(span);
-                var del = document.createElement("button");
-                del.type = "button";
-                del.className = "btn btn-small btn-secondary";
-                del.style.marginLeft = "0.75rem";
-                del.textContent = "Chat leeren";
-                del.addEventListener("click", function () {
-                  if (
-                    !window.confirm(
-                      "Alle Nachrichten, Termine und Sterne-Bewertungen für " +
-                        c.label +
-                        " wirklich löschen?"
-                    )
-                  ) {
-                    return;
-                  }
-                  fetch("/api/admin/delete_chat/" + encodeURIComponent(c.subject), {
-                    method: "DELETE",
-                    credentials: "include",
-                  })
-                    .then(function (r) {
-                      return r.json().then(function (d) {
-                        return { ok: r.ok, d: d };
-                      });
-                    })
-                    .then(function (x) {
-                      if (!x.ok) {
-                        window.alert("Löschen fehlgeschlagen.");
-                        return;
-                      }
-                      loadChats();
-                    });
-                });
-                li.appendChild(del);
                 ul.appendChild(li);
               });
             }
