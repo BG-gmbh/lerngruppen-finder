@@ -218,6 +218,25 @@
       return (name || "LF").trim().slice(0, 2).toUpperCase() || "LF";
     }
 
+    function parseBuiltAvatar(url) {
+      if (!url || url.indexOf("data:image/svg+xml") !== 0) return null;
+      try {
+        var svg = decodeURIComponent(url.slice(url.indexOf(",") + 1));
+        var fillMatch = svg.match(/<rect[^>]*\sfill="([^"]*)"/);
+        var texts = [];
+        var re = /<text[^>]*>([^<]*)<\/text>/g;
+        var m;
+        while ((m = re.exec(svg))) texts.push(m[1]);
+        return {
+          color: fillMatch ? fillMatch[1] : null,
+          initials: texts[0] || null,
+          symbol: texts[1] || null,
+        };
+      } catch (e) {
+        return null;
+      }
+    }
+
     function svgAvatar(color, initials, symbol) {
       var safeInitials = (initials || "LF").replace(/[<>&"]/g, "").slice(0, 2).toUpperCase();
       var safeSymbol = (symbol || "").replace(/[<>&"]/g, "").slice(0, 1);
@@ -250,7 +269,10 @@
       var symbol = document.getElementById("avatar-symbol");
       var upload = document.getElementById("avatar-upload");
       if (!preview || !color || !initials || !symbol || !upload) return;
-      initials.value = initialsFromName(data.username);
+      var built = parseBuiltAvatar(data.avatar_url);
+      initials.value = (built && built.initials) || initialsFromName(data.username);
+      if (built && built.color) color.value = built.color;
+      if (built) symbol.value = built.symbol || "";
       if (data.avatar_url) {
         preview.style.backgroundImage = "url('" + data.avatar_url + "')";
         preview.textContent = "";
