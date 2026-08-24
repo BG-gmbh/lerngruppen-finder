@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Impressum — lerngruppen finder</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="logo" href="/">lerngruppen finder</a>
+    <nav>
+      <span id="nav-guest">
+      </span>
+      <span id="nav-user" class="hidden" style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+        <span class="nav-user" id="nav-username"></span>
+        <a href="/dashboard.html" class="btn btn-small">Dashboard</a>
+        <a href="/laden.html" class="btn btn-small btn-secondary">Laden</a>
+        <a href="/chat.html" class="btn btn-small btn-secondary">Chat</a>
+        <a href="/settings.html" class="btn btn-small btn-secondary">Einstellungen</a>
+        <a href="/admin.html" id="nav-admin" class="btn btn-small hidden">Admin</a>
+        <form class="inline-form" action="/logout" method="post">
+          <button type="submit" class="btn btn-ghost">Logout</button>
+        </form>
+      </span>
+    </nav>
+  </header>
+
+  <main class="container container-wide">
+    <section class="card">
+      <h1>Impressum</h1>
+      <p class="legal-note">
+        Platzhalter — diese Seite ist erst rechtlich gültig, wenn die echten Angaben unten eingetragen
+        sind. Bitte direkt in <code>flutter_app/docs/impressum.html</code> ausfüllen (nicht per Chat
+        übermitteln, da personenbezogene Adressdaten sonst im Sitzungsverlauf landen). Pflichtangaben
+        nach § 5 DDG.
+      </p>
+
+      <div class="legal-content">
+        <h2>Angaben gemäß § 5 DDG</h2>
+        <p>
+          [Name / Firmenname]<br>
+          [Straße und Hausnummer]<br>
+          [PLZ und Ort]
+        </p>
+
+        <h2>Kontakt</h2>
+        <p>
+          E-Mail: [E-Mail-Adresse]<br>
+          Telefon: [Telefonnummer, optional]
+        </p>
+
+        <h2>Vertreten durch</h2>
+        <p>[Nur ausfüllen, falls Betreiber keine Einzelperson ist, z. B. Geschäftsführung/Vorstand]</p>
+
+        <h2>Register</h2>
+        <p>[Nur ausfüllen, falls im Handels-/Vereinsregister eingetragen: Registergericht + Registernummer]</p>
+
+        <h2>Umsatzsteuer-ID</h2>
+        <p>[Nur ausfüllen, falls vorhanden, gemäß § 27a UStG]</p>
+
+        <h2>Verantwortlich für den Inhalt nach § 18 Abs. 2 MStV</h2>
+        <p>[Name und Anschrift wie oben]</p>
+
+        <h2>Streitschlichtung</h2>
+        <p>
+          Die Europäische Kommission stellt eine Plattform zur Online-Streitbeilegung (OS) bereit:
+          <a href="https://ec.europa.eu/consumers/odr/" target="_blank" rel="noopener">https://ec.europa.eu/consumers/odr/</a>.
+          Wir sind nicht verpflichtet und nicht bereit, an Streitbeilegungsverfahren vor einer
+          Verbraucherschlichtungsstelle teilzunehmen. [Absatz entfernen, falls nicht zutreffend.]
+        </p>
+      </div>
+    </section>
+  </main>
+  <script src="/js/config.js"></script>
+  <script src="/js/flash.js"></script>
+  <script src="/js/nav.js"></script>
+  <script src="/js/school-logo.js"></script>
+  <script src="/js/footer.js"></script>
+</body>
+</html>

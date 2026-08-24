@@ -956,3 +956,58 @@ a:hover {
 body.role-readonly .admin-write-action {
   display: none !important;
 }
+
+.site-footer {
+  margin-top: 3rem;
+  padding: 1.5rem 1rem;
+  text-align: center;
+  border-top: 1px solid #2a3544;
+}
+
+.site-footer-nav a {
+  color: var(--muted);
+  text-decoration: none;
+  margin: 0 0.75rem;
+  font-size: 0.85rem;
+}
+
+.site-footer-nav a:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.btn-danger {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+}
+
+.btn-danger:hover {
+  background: rgba(240, 113, 120, 0.12);
+}
+
+.legal-content h2 {
+  margin-top: 2rem;
+}
+
+.legal-content h2:first-child {
+  margin-top: 0;
+}
+
+.legal-content p, .legal-content li {
+  color: var(--text);
+  line-height: 1.6;
+}
+
+.legal-content ul {
+  padding-left: 1.25rem;
+}
+
+.legal-note {
+  background: rgba(255, 204, 102, 0.12);
+  color: var(--warning);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  font-size: 0.92rem;
+  margin-bottom: 1.5rem;
+}

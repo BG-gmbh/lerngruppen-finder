@@ -1199,6 +1199,19 @@ def admin_schools_create():
     return jsonify(ok=True, name=name)
 
 
+@app.route("/api/admin/classes", methods=["GET"])
+@admin_api
+def admin_classes_list():
+    db = get_db()
+    if _has_full_read_access():
+        school = (request.args.get("school") or "").strip()
+    else:
+        school = admin_school(db)
+    flt = {"school": school} if school else {}
+    classes = sorted({c for c in db.users.distinct("class_name", flt) if c})
+    return jsonify(classes=classes)
+
+
 @app.route("/api/admin/app-settings", methods=["GET"])
 @admin_api
 def admin_app_settings_get():
@@ -2559,6 +2572,38 @@ def _public_user_payload(db, user_id):
     }
 
 
+def _erase_user_account(db, user_id):
+    """Recht auf Löschung (Art. 17 DSGVO). Loescht das Konto und alles, was
+    nur dem Nutzer selbst gehoert (Praesenz, Bewertungen, Lernorte, Zeugnis-
+    Punkte, API-Tokens). Chat-Nachrichten, Laden-Kaeufe und Meldungen werden
+    anonymisiert statt geloescht, damit gemeinsame Chatverlaeufe und die
+    Kaeufer-Buchhaltung anderer Nutzer:innen erhalten bleiben."""
+    uid = oid(user_id)
+    db.chat_messages.update_many(
+        {"user_id": uid},
+        {"$set": {"user_id": None, "username": "Gelöschtes Konto"}},
+    )
+    db.laden_purchases.update_many(
+        {"user_id": uid},
+        {"$set": {"user_id": None, "username": "Gelöschtes Konto"}},
+    )
+    db.chat_message_reports.update_many(
+        {"reporter_user_id": uid},
+        {"$set": {"reporter_user_id": None, "reporter_username": "Gelöschtes Konto"}},
+    )
+    db.chat_message_reports.update_many(
+        {"reported_user_id": uid},
+        {"$set": {"reported_user_id": None, "reported_username": "Gelöschtes Konto"}},
+    )
+    db.invite_codes.update_many({"created_by": uid}, {"$set": {"created_by": None}})
+    db.chat_presence.delete_many({"user_id": uid})
+    db.chat_ratings.delete_many({"user_id": uid})
+    db.admin_subject_scores.delete_many({"user_id": uid})
+    db.learning_places.delete_many({"user_id": uid})
+    db.api_tokens.delete_many({"user_id": uid})
+    db.users.delete_one({"_id": uid})
+
+
 @app.route("/api/login", methods=["POST"])
 def api_login():
     data = request.get_json(silent=True) or request.form
@@ -3036,6 +3081,8 @@ def _extract_zeugnis(image_bytes, media_type):
 def api_onboarding_zeugnis():
     if not _load_api_auth_context():
         return jsonify(error="unauthorized"), 401
+    if not request.form.get("consent"):
+        return jsonify(error="consent_required"), 400
     f = request.files.get("zeugnis")
     if f is None or not f.filename:
         return jsonify(error="no_file"), 400
@@ -3114,6 +3161,86 @@ def api_me():
     if user is None:
         return jsonify({}), 401
     return jsonify(user)
+
+
+@app.route("/api/account/export", methods=["GET"])
+@login_required_api
+def api_account_export():
+    db = get_db()
+    uid = oid(session["user_id"])
+    user = _public_user_payload(db, uid)
+    if user is None:
+        return jsonify(error="auth"), 401
+
+    messages = [
+        {"subject": m.get("subject"), "body": m.get("body"), "created_at": m.get("created_at")}
+        for m in db.chat_messages.find({"user_id": uid}).sort("created_at", 1)
+    ]
+    ratings = [
+        {
+            "subject": r.get("subject"),
+            "rating": r.get("rating"),
+            "comment": r.get("comment"),
+            "created_at": r.get("created_at"),
+        }
+        for r in db.chat_ratings.find({"user_id": uid})
+    ]
+    scores = [
+        {
+            "subject": s.get("subject"),
+            "points": s.get("points"),
+            "note": s.get("note"),
+            "updated_at": s.get("updated_at"),
+        }
+        for s in db.admin_subject_scores.find({"user_id": uid})
+    ]
+    places = [
+        {
+            "name": p.get("name"),
+            "address": p.get("address"),
+            "note": p.get("note"),
+            "created_at": p.get("created_at"),
+        }
+        for p in db.learning_places.find({"user_id": uid})
+    ]
+    purchases = [
+        {
+            "item_title": p.get("item_title"),
+            "points_spent": p.get("points_spent"),
+            "created_at": p.get("created_at"),
+        }
+        for p in db.laden_purchases.find({"user_id": uid})
+    ]
+    reports_filed = [
+        {"subject": r.get("subject"), "reason": r.get("reason"), "created_at": r.get("created_at")}
+        for r in db.chat_message_reports.find({"reporter_user_id": uid})
+    ]
+
+    return jsonify(
+        exported_at=utcnow(),
+        profile=user,
+        chat_messages=messages,
+        chat_ratings=ratings,
+        subject_scores=scores,
+        learning_places=places,
+        laden_purchases=purchases,
+        reports_filed=reports_filed,
+    )
+
+
+@app.route("/api/account/delete", methods=["POST"])
+@login_required_api
+def api_account_delete():
+    data = request.get_json(silent=True) or {}
+    password = data.get("password") or ""
+    db = get_db()
+    uid = oid(session["user_id"])
+    row = db.users.find_one({"_id": uid}, {"password_hash": 1})
+    if row is None or not check_password_hash(row["password_hash"], password):
+        return jsonify(error="pwd_wrong"), 400
+    _erase_user_account(db, uid)
+    session.clear()
+    return jsonify(ok=True)
 
 
 @app.route("/uploads/avatars/<path:filename>")

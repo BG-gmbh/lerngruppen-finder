@@ -26,6 +26,8 @@
       "Zum Passwortwechsel bitte aktuelles Passwort, neues Passwort und Wiederholung ausfüllen.",
     pwd_current_wrong: "Das aktuelle Passwort ist falsch.",
     banned: "Dein Konto wurde gesperrt. Bitte den Admin kontaktieren.",
+    account_deleted: "Dein Konto wurde gelöscht.",
+    consent_required: "Bitte der Übermittlung an OpenAI zustimmen, oder manuell eintragen.",
   };
 
   var text = messages[code];
@@ -40,7 +42,7 @@
 
   var li = document.createElement("li");
   var cls =
-    code === "saved" || code === "user_created" || code === "setup_done" || code === "redeem_ok"
+    code === "saved" || code === "user_created" || code === "setup_done" || code === "redeem_ok" || code === "account_deleted"
       ? "flash-success"
       : code === "logout" || code === "register_disabled"
         ? "flash-info"

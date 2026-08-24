@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Datenschutzerklärung — lerngruppen finder</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="logo" href="/">lerngruppen finder</a>
+    <nav>
+      <span id="nav-guest">
+      </span>
+      <span id="nav-user" class="hidden" style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+        <span class="nav-user" id="nav-username"></span>
+        <a href="/dashboard.html" class="btn btn-small">Dashboard</a>
+        <a href="/laden.html" class="btn btn-small btn-secondary">Laden</a>
+        <a href="/chat.html" class="btn btn-small btn-secondary">Chat</a>
+        <a href="/settings.html" class="btn btn-small btn-secondary">Einstellungen</a>
+        <a href="/admin.html" id="nav-admin" class="btn btn-small hidden">Admin</a>
+        <form class="inline-form" action="/logout" method="post">
+          <button type="submit" class="btn btn-ghost">Logout</button>
+        </form>
+      </span>
+    </nav>
+  </header>
+
+  <main class="container container-wide">
+    <section class="card">
+      <h1>Datenschutzerklärung</h1>
+      <p class="legal-note">
+        Dieser Text beschreibt, welche Daten diese Anwendung technisch tatsächlich verarbeitet, und
+        wurde auf dieser Grundlage erstellt. Er ersetzt keine rechtliche Prüfung durch den Betreiber
+        bzw. eine Datenschutzbeauftragte oder einen Datenschutzbeauftragten. Name und Kontaktdaten des
+        Verantwortlichen sind im <a href="/impressum.html">Impressum</a> einzutragen.
+      </p>
+
+      <div class="legal-content">
+        <h2>1. Verantwortlicher</h2>
+        <p>
+          Verantwortlich für die Datenverarbeitung auf dieser Website ist die im
+          <a href="/impressum.html">Impressum</a> genannte Person bzw. Stelle. Anfragen zum
+          Datenschutz (Auskunft, Berichtigung, Löschung, Datenübertragbarkeit, Widerspruch) richten
+          Sie bitte an die dort angegebene Kontaktadresse.
+        </p>
+
+        <h2>2. Welche Daten wir verarbeiten</h2>
+        <ul>
+          <li><strong>Kontodaten:</strong> Benutzername, Passwort (als Hash gespeichert, nicht im Klartext), Anzeigename, Schule, Klasse/Jahrgang, Fach-Einstufungen (Pro/Mittel/Noob je Fach).</li>
+          <li><strong>Profilbild:</strong> entweder ein von Ihnen hochgeladenes Bild oder ein clientseitig erzeugtes Avatar-Symbol.</li>
+          <li><strong>Optionale Angaben:</strong> Kontakt-E-Mail und IServ-E-Mail für Lehrkräfte, sofern Sie diese eintragen (z. B. für Benachrichtigungen zu Laden-Käufen).</li>
+          <li><strong>Zeugnisfoto:</strong> beim Onboarding können Sie ein Foto Ihres Zeugnisses hochladen, damit Name, Klasse, Schule und Fachnoten automatisch ausgelesen werden. Das Foto wird dafür an die Programmierschnittstelle von OpenAI übermittelt (siehe Punkt 4) und nicht dauerhaft in unserer Datenbank gespeichert. Diese Funktion ist optional — Sie können Ihre Daten stattdessen manuell eingeben.</li>
+          <li><strong>Chat-Inhalte:</strong> Nachrichten, die Sie in Lerngruppen-Chats schreiben, sowie Bewertungen, die Sie nach einem Chat abgeben.</li>
+          <li><strong>Laden/Punkte:</strong> eingelöste Prämien und der dafür verwendete Punktestand.</li>
+          <li><strong>Lernorte:</strong> von Ihnen eingetragene Lernorte (Name, Adresse/Raum, Notiz).</li>
+          <li><strong>Technische Daten:</strong> ein Session-Cookie zur Anmeldung sowie die durch den Betrieb eines Webservers üblichen Zugriffsdaten (z. B. IP-Adresse, Zeitpunkt des Zugriffs).</li>
+        </ul>
+
+        <h2>3. Zwecke und Rechtsgrundlagen</h2>
+        <p>
+          Die Verarbeitung der Kontodaten erfolgt zur Bereitstellung der Kernfunktion dieser Anwendung
+          (Vermittlung von Lerngruppen), Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO
+          (Vertragserfüllung bzw. vorvertragliche Maßnahme). Für optionale Funktionen — Zeugnis-Auslesung
+          per KI und E-Mail-Benachrichtigungen — holen wir vor der jeweiligen Nutzung Ihre Einwilligung
+          ein (Art. 6 Abs. 1 lit. a DSGVO); diese können Sie jederzeit für die Zukunft widerrufen, indem
+          Sie die Funktion einfach nicht nutzen.
+        </p>
+
+        <h2>4. Empfänger und Drittanbieter</h2>
+        <ul>
+          <li><strong>OpenAI</strong> (USA): Wird ein Zeugnisfoto hochgeladen, wird es zur Texterkennung an die OpenAI-API übermittelt. Dabei können personenbezogene Daten (Name, Klasse, Schule, Noten) in ein Land außerhalb der EU/des EWR übertragen werden. Dies betrifft in der Regel Minderjährige — die Nutzung dieser Funktion ist daher ausdrücklich freiwillig und setzt eine gesonderte Einwilligung voraus.</li>
+          <li><strong>E-Mail-Versand:</strong> Für Benachrichtigungen an Lehrkräfte (z. B. bei Laden-Käufen) wird ein SMTP-Anbieter genutzt (die konkrete Konfiguration legt der Betreiber fest). Es werden dabei nur die für die Benachrichtigung nötigen Angaben (z. B. Benutzername, gekaufter Artikel) versendet.</li>
+          <li><strong>Hosting:</strong> Anwendung und Datenbank werden bei Infrastruktur-Dienstleistern betrieben (u. a. Render für das Hosting und MongoDB Atlas für die Datenbank). Mit diesen Anbietern bestehen bzw. sollten Auftragsverarbeitungsverträge nach Art. 28 DSGVO bestehen.</li>
+        </ul>
+        <p>Eine Weitergabe an sonstige Dritte oder eine Nutzung zu Werbezwecken findet nicht statt.</p>
+
+        <h2>5. Cookies</h2>
+        <p>
+          Wir setzen ausschließlich ein technisch notwendiges Session-Cookie zur Anmeldung ein. Dieses
+          ist zum Betrieb der Website erforderlich und fällt unter die Ausnahme für unbedingt
+          erforderliche Cookies (§ 25 Abs. 2 TTDSG) — eine Einwilligung ist dafür nicht nötig. Es werden
+          keine Analyse-, Tracking- oder Werbe-Cookies eingesetzt.
+        </p>
+
+        <h2>6. Speicherdauer</h2>
+        <p>
+          Chat-Nachrichten, Termine, Bewertungen und Meldungen zu einem Lernraum werden automatisch
+          gelöscht, sobald der letzte Teilnehmer bzw. die letzte Teilnehmerin den Raum verlässt.
+          Kontodaten bleiben bestehen, bis Sie Ihr Konto löschen (siehe Punkt 7) oder der Betreiber sie
+          auf Ihre Anfrage hin löscht.
+        </p>
+
+        <h2>7. Ihre Rechte</h2>
+        <p>Ihnen stehen nach der DSGVO folgende Rechte zu:</p>
+        <ul>
+          <li>Auskunft über die zu Ihnen gespeicherten Daten (Art. 15 DSGVO)</li>
+          <li>Berichtigung unrichtiger Daten (Art. 16 DSGVO)</li>
+          <li>Löschung Ihrer Daten (Art. 17 DSGVO)</li>
+          <li>Einschränkung der Verarbeitung (Art. 18 DSGVO)</li>
+          <li>Datenübertragbarkeit (Art. 20 DSGVO)</li>
+          <li>Widerspruch gegen die Verarbeitung (Art. 21 DSGVO)</li>
+          <li>Beschwerde bei einer Aufsichtsbehörde (Art. 77 DSGVO)</li>
+        </ul>
+        <p>
+          Sie können Ihre eigenen Daten direkt in den <a href="/settings.html">Einstellungen</a> unter
+          „Meine Daten“ als Datei herunterladen oder Ihr Konto dort vollständig löschen. Für alle
+          weiteren Anliegen nutzen Sie bitte die Kontaktadresse aus dem Impressum.
+        </p>
+
+        <h2>8. Minderjährige Nutzer:innen</h2>
+        <p>
+          Diese Anwendung richtet sich an Schülerinnen und Schüler und wird typischerweise im
+          schulischen Kontext eingesetzt. Sofern Nutzende das 16. Lebensjahr noch nicht vollendet haben,
+          ist für die Registrierung sowie für optionale, einwilligungspflichtige Funktionen (insb. die
+          Zeugnis-Auslesung per KI) nach Art. 8 DSGVO die Einwilligung der Erziehungsberechtigten
+          erforderlich. Der Betreiber bzw. die Schule ist dafür verantwortlich, diese Einwilligung —
+          etwa im Rahmen der schulischen Anmeldung — einzuholen.
+        </p>
+      </div>
+    </section>
+  </main>
+  <script src="/js/config.js"></script>
+  <script src="/js/flash.js"></script>
+  <script src="/js/nav.js"></script>
+  <script src="/js/school-logo.js"></script>
+  <script src="/js/footer.js"></script>
+</body>
+</html>

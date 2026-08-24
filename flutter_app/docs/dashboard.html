@@ -91,6 +91,10 @@
             <input id="onboarding-file" class="modal-input" name="zeugnis" type="file" accept="image/png,image/jpeg,image/webp,image/gif" required>
             <p class="field-hint modal-hint">png, jpg, jpeg, webp, gif · max. 8 MB.</p>
           </div>
+          <label class="check-row modal-field">
+            <input type="checkbox" id="onboarding-consent">
+            <span>Ich bin einverstanden, dass das Foto zur automatischen Auslesung an OpenAI (USA) übermittelt wird. Siehe <a href="/datenschutz.html" target="_blank" rel="noopener">Datenschutzerklärung</a>. Das Foto wird dabei nicht dauerhaft gespeichert.</span>
+          </label>
           <p id="onboarding-upload-error" class="field-hint modal-hint" style="color:#ef476f;display:none;"></p>
           <button id="onboarding-upload-btn" type="submit" class="btn btn-block">Zeugnis auslesen</button>
           <button id="onboarding-manual-btn" type="button" class="btn btn-ghost btn-block" style="margin-top:.5rem;">Ohne Zeugnis manuell eintragen</button>
@@ -342,15 +346,23 @@
       var uploadBtn = document.getElementById("onboarding-upload-btn");
       var fileInput = document.getElementById("onboarding-file");
 
+      var consentInput = document.getElementById("onboarding-consent");
+
       uploadForm.addEventListener("submit", function (e) {
         e.preventDefault();
         var file = fileInput.files && fileInput.files[0];
         if (!file) { uploadErr.textContent = "Bitte ein Zeugnis auswählen."; uploadErr.style.display = "block"; return; }
+        if (!consentInput || !consentInput.checked) {
+          uploadErr.textContent = "Bitte der Übermittlung an OpenAI zustimmen, oder unten ohne Zeugnis manuell eintragen.";
+          uploadErr.style.display = "block";
+          return;
+        }
         uploadErr.style.display = "none";
         uploadBtn.disabled = true;
         uploadBtn.textContent = "Wird ausgelesen …";
         var fd = new FormData();
         fd.append("zeugnis", file);
+        fd.append("consent", "1");
         fetch("/api/onboarding/zeugnis", { method: "POST", credentials: "include", body: fd })
           .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
           .then(function (res) {
@@ -438,5 +450,6 @@
       });
     }
   </script>
+  <script src="/js/footer.js"></script>
 </body>
 </html>

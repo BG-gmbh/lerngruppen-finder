@@ -167,6 +167,15 @@
 
       <p class="muted"><a href="/dashboard.html">Zurück zum Dashboard</a></p>
     </section>
+
+    <section class="card" style="margin-top:1rem;">
+      <h2 class="card-title">Meine Daten</h2>
+      <p class="field-hint">Nach der DSGVO können Sie Ihre gespeicherten Daten herunterladen oder Ihr Konto vollständig löschen.</p>
+      <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+        <button id="export-data-btn" type="button" class="btn btn-secondary">Meine Daten exportieren</button>
+        <button id="delete-account-btn" type="button" class="btn btn-danger">Konto löschen</button>
+      </div>
+    </section>
   </main>
   <script src="/js/config.js"></script>
   <script src="/js/flash.js"></script>
@@ -295,6 +304,103 @@
         if (choice) choice.value = "upload";
       });
     }
+
+    document.getElementById("export-data-btn").addEventListener("click", function () {
+      fetch("/api/account/export", { credentials: "include" })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          var blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement("a");
+          a.href = url;
+          a.download = "meine-daten.json";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+        });
+    });
+
+    document.getElementById("delete-account-btn").addEventListener("click", function () {
+      var backdrop = document.createElement("div");
+      backdrop.className = "modal-backdrop";
+
+      var card = document.createElement("div");
+      card.className = "modal-card";
+
+      var title = document.createElement("h2");
+      title.className = "modal-title";
+      title.textContent = "Konto wirklich löschen?";
+      card.appendChild(title);
+
+      var hint = document.createElement("p");
+      hint.className = "modal-hint";
+      hint.textContent = "Diese Aktion kann nicht rückgängig gemacht werden. Bitte gib dein Passwort ein, um zu bestätigen.";
+      card.appendChild(hint);
+
+      var error = document.createElement("p");
+      error.className = "modal-error";
+      card.appendChild(error);
+
+      var form = document.createElement("form");
+      var field = document.createElement("div");
+      field.className = "modal-field";
+      var label = document.createElement("label");
+      label.textContent = "Passwort";
+      var input = document.createElement("input");
+      input.type = "password";
+      input.className = "modal-input";
+      input.required = true;
+      input.autocomplete = "current-password";
+      label.appendChild(input);
+      field.appendChild(label);
+      form.appendChild(field);
+
+      var actions = document.createElement("div");
+      actions.className = "modal-actions";
+      var cancelBtn = document.createElement("button");
+      cancelBtn.type = "button";
+      cancelBtn.className = "btn btn-ghost";
+      cancelBtn.textContent = "Abbrechen";
+      cancelBtn.addEventListener("click", function () { backdrop.remove(); });
+      var submitBtn = document.createElement("button");
+      submitBtn.type = "submit";
+      submitBtn.className = "btn btn-danger";
+      submitBtn.textContent = "Endgültig löschen";
+      actions.appendChild(cancelBtn);
+      actions.appendChild(submitBtn);
+      form.appendChild(actions);
+
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        error.textContent = "";
+        submitBtn.disabled = true;
+        fetch("/api/account/delete", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: input.value }),
+        })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+          .then(function (res) {
+            if (!res.ok) {
+              submitBtn.disabled = false;
+              error.textContent = res.d && res.d.error === "pwd_wrong" ? "Passwort ist falsch." : "Löschen fehlgeschlagen.";
+              return;
+            }
+            window.location.href = "/index.html?flash=account_deleted";
+          })
+          .catch(function () {
+            submitBtn.disabled = false;
+            error.textContent = "Netzwerkfehler. Bitte erneut versuchen.";
+          });
+      });
+
+      card.appendChild(form);
+      backdrop.appendChild(card);
+      document.body.appendChild(backdrop);
+    });
   </script>
+  <script src="/js/footer.js"></script>
 </body>
 </html>

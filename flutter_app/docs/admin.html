@@ -33,6 +33,7 @@
       <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="codes">Einladungs-Codes</button>
       <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="shop">Laden</button>
       <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="teachers">Lehrer (E-Mail)</button>
+      <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="schools">Schulen</button>
       <button type="button" class="tab-btn hidden" id="tab-btn-logo" role="tab" aria-selected="false" data-tab="logo">Logo</button>
     </div>
 
@@ -54,7 +55,7 @@
         </label>
         <label>
           Klasse
-          <input name="class_name" type="text" maxlength="20" placeholder="z. B. 8a, 9b, 1c" autocomplete="off">
+          <input name="class_name" type="text" maxlength="20" placeholder="z. B. 8a, 9b, 1c" autocomplete="off" list="classes-datalist">
         </label>
         <label>
           Rolle
@@ -154,7 +155,7 @@
       <form id="code-limit-form" class="stack-form hidden" autocomplete="off">
         <div class="form-row two">
           <label>Schule
-            <input id="code-limit-school" type="text" maxlength="120" placeholder="z. B. Schule A">
+            <input id="code-limit-school" type="text" maxlength="120" placeholder="z. B. Schule A" list="schools-datalist">
           </label>
           <label>Schul-Limit
             <input id="code-limit-school-limit" type="number" min="0" step="1" value="0">
@@ -193,11 +194,11 @@
         </label>
         <label>
           Schule (leer = alle Schulen)
-          <input id="shop-school" type="text" maxlength="120" placeholder="z. B. Schule A" autocomplete="off">
+          <input id="shop-school" type="text" maxlength="120" placeholder="z. B. Schule A" autocomplete="off" list="schools-datalist">
         </label>
         <label>
           Klasse (leer = alle Klassen)
-          <input id="shop-class" type="text" maxlength="20" placeholder="z. B. 8a, 9b, 1c" autocomplete="off">
+          <input id="shop-class" type="text" maxlength="20" placeholder="z. B. 8a, 9b, 1c" autocomplete="off" list="classes-datalist">
         </label>
         <label>
           Sortierung (kleinere Zahl zuerst)
@@ -255,6 +256,20 @@
       <ul id="teacher-list" class="code-list"></ul>
     </section>
 
+    <section class="card tab-panel hidden" id="tab-schools" role="tabpanel">
+      <h2 class="card-title">Schulen</h2>
+      <p class="field-hint">Schulen entstehen normalerweise automatisch, sobald sie irgendwo eingetragen werden (Profil, Einladungscode, Laden). Hier siehst du alle bekannten Schulen; als Dev kannst du zusätzlich eine neue anlegen.</p>
+      <form id="new-school-form" class="stack-form admin-write-action hidden" autocomplete="off">
+        <label>
+          Neue Schule
+          <input id="new-school-name" type="text" maxlength="120" placeholder="z. B. Schule A" required>
+        </label>
+        <p><button type="submit" class="btn btn-secondary">Schule anlegen</button></p>
+      </form>
+      <p class="muted" id="new-school-out" aria-live="polite"></p>
+      <ul id="schools-list" class="code-list"></ul>
+    </section>
+
     <section class="card tab-panel hidden" id="tab-logo" role="tabpanel">
       <h2 class="card-title">Schul-Logo</h2>
       <p class="field-hint">Dieses Logo erscheint oben rechts im Header. Leer lassen entfernt es wieder. Als Dev kannst du die Schule frei wählen (leer = für alle Schulen).</p>
@@ -277,6 +292,37 @@
     </section>
   </main>
 
+  <datalist id="schools-datalist"></datalist>
+  <datalist id="classes-datalist"></datalist>
+
+  <div id="new-code-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="new-code-modal-title">
+    <div class="modal-card">
+      <h2 id="new-code-modal-title" class="modal-title">Neuen Code erzeugen</h2>
+
+      <div class="modal-field">
+        <label for="new-code-school">Schule</label>
+        <input id="new-code-school" class="modal-input" type="text" maxlength="120" placeholder="z. B. Schule A" list="schools-datalist">
+      </div>
+
+      <div class="modal-field">
+        <label for="new-code-class">Klasse (optional)</label>
+        <input id="new-code-class" class="modal-input" type="text" maxlength="20" placeholder="z. B. 8a" list="classes-datalist">
+      </div>
+
+      <div class="modal-field">
+        <label for="new-code-role">Rolle</label>
+        <select id="new-code-role" class="modal-input"></select>
+      </div>
+
+      <p class="muted modal-error" id="new-code-modal-error" role="alert"></p>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="new-code-cancel">Abbrechen</button>
+        <button type="button" class="btn btn-primary" id="new-code-save">Erzeugen</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/js/flash.js"></script>
   <script src="/js/school-logo.js"></script>
   <script src="/js/must-change-password.js"></script>
@@ -290,6 +336,7 @@
         codes: document.getElementById("tab-codes"),
         shop: document.getElementById("tab-shop"),
         teachers: document.getElementById("tab-teachers"),
+        schools: document.getElementById("tab-schools"),
         logo: document.getElementById("tab-logo"),
       };
 
@@ -460,6 +507,83 @@
           });
       }
 
+      function loadSchoolsDatalist() {
+        fetch("/api/admin/schools", { credentials: "include" })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (data) {
+            var dl = document.getElementById("schools-datalist");
+            if (!dl || !data) return;
+            dl.innerHTML = (data.schools || [])
+              .map(function (s) { return '<option value="' + s.replace(/"/g, "&quot;") + '"></option>'; })
+              .join("");
+          });
+      }
+
+      function loadClassesDatalist() {
+        fetch("/api/admin/classes", { credentials: "include" })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (data) {
+            var dl = document.getElementById("classes-datalist");
+            if (!dl || !data) return;
+            dl.innerHTML = (data.classes || [])
+              .map(function (c) { return '<option value="' + c.replace(/"/g, "&quot;") + '"></option>'; })
+              .join("");
+          });
+      }
+
+      function loadSchools() {
+        fetch("/api/admin/schools", { credentials: "include" })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (data) {
+            var list = document.getElementById("schools-list");
+            if (!list) return;
+            list.innerHTML = "";
+            var schools = (data && data.schools) || [];
+            if (!schools.length) {
+              var empty = document.createElement("li");
+              empty.className = "muted";
+              empty.textContent = "Keine Schulen gefunden.";
+              list.appendChild(empty);
+              return;
+            }
+            schools.forEach(function (name) {
+              var li = document.createElement("li");
+              li.textContent = name;
+              list.appendChild(li);
+            });
+          });
+      }
+
+      var newSchoolForm = document.getElementById("new-school-form");
+      if (newSchoolForm) {
+        newSchoolForm.addEventListener("submit", function (e) {
+          e.preventDefault();
+          var out = document.getElementById("new-school-out");
+          var input = document.getElementById("new-school-name");
+          var name = (input.value || "").trim();
+          out.textContent = "";
+          fetch("/api/admin/schools", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: name }),
+          })
+            .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+            .then(function (x) {
+              if (!x.ok) {
+                out.textContent = x.d && x.d.error === "duplicate"
+                  ? "Diese Schule gibt es schon."
+                  : "Schule konnte nicht angelegt werden.";
+                return;
+              }
+              out.textContent = "Schule „" + x.d.name + "“ angelegt.";
+              input.value = "";
+              loadSchools();
+              loadSchoolsDatalist();
+            });
+        });
+      }
+
       buttons.forEach(function (btn) {
         btn.addEventListener("click", function () {
           var key = btn.getAttribute("data-tab");
@@ -491,6 +615,9 @@
           }
           if (key === "logo") {
             loadLogoSettings();
+          }
+          if (key === "schools") {
+            loadSchools();
           }
         });
       });
@@ -713,39 +840,30 @@
           .then(renderInviteCodeLimits);
       }
 
+      var newCodeModal = document.getElementById("new-code-modal");
+      var newCodeModalError = document.getElementById("new-code-modal-error");
+
       document.getElementById("btn-new-code").addEventListener("click", function () {
+        newCodeModalError.textContent = "";
+        document.getElementById("new-code-school").value = "";
+        if (!document.getElementById("new-code-class").readOnly) {
+          document.getElementById("new-code-class").value = "";
+        }
+        newCodeModal.classList.remove("hidden");
+      });
+
+      document.getElementById("new-code-cancel").addEventListener("click", function () {
+        newCodeModal.classList.add("hidden");
+      });
+
+      document.getElementById("new-code-save").addEventListener("click", function () {
         var out = document.getElementById("new-code-out");
-        out.textContent = "";
-        var school = window.prompt("Schule für diesen Code:", "");
-        if (school === null) return;
-        school = school.trim();
-        var className = "";
-        if (window.__currentRole === "teacher") {
-          className = window.__currentClass || "";
-        } else {
-          className = window.prompt("Klasse für diesen Code (optional, z. B. 8a):", "");
-          if (className === null) return;
-          className = className.trim();
-        }
+        newCodeModalError.textContent = "";
+        var school = (document.getElementById("new-code-school").value || "").trim();
+        var className = (document.getElementById("new-code-class").value || "").trim();
+        var role = document.getElementById("new-code-role").value || "user";
         if (className.length > 20) {
-          window.alert("Die Klasse darf höchstens 20 Zeichen lang sein.");
-          return;
-        }
-        var roleHint = window.__currentRole === "admin"
-          ? "user oder teacher"
-          : window.__currentRole === "dev"
-            ? "user, teacher, admin, tester oder dev"
-            : "user";
-        var role = window.prompt("Rolle für diesen Code: " + roleHint, "user");
-        if (role === null) return;
-        role = role.trim() || "user";
-        var allowedRoles = window.__currentRole === "teacher"
-          ? ["user"]
-          : window.__currentRole === "admin"
-            ? ["user", "teacher"]
-            : ["user", "teacher", "admin", "tester", "dev"];
-        if (allowedRoles.indexOf(role) === -1) {
-          window.alert("Diese Rolle darfst du nicht für Einladungscodes vergeben.");
+          newCodeModalError.textContent = "Die Klasse darf höchstens 20 Zeichen lang sein.";
           return;
         }
         fetch("/api/admin/invite-codes", {
@@ -762,7 +880,7 @@
           .then(function (x) {
             if (!x.ok || !x.d.code) {
               if (x.d && x.d.error === "code_limit") {
-                out.textContent =
+                newCodeModalError.textContent =
                   "Keine freie Code-Lizenz: " +
                   x.d.active +
                   " von " +
@@ -772,11 +890,14 @@
                   " Nutzer, " +
                   Number(x.d.codes || 0) +
                   " offene Codes).";
+              } else if (x.d && x.d.error === "forbidden") {
+                newCodeModalError.textContent = "Diese Rolle darfst du nicht für Einladungscodes vergeben.";
               } else {
-                out.textContent = "Code konnte nicht erzeugt werden.";
+                newCodeModalError.textContent = "Code konnte nicht erzeugt werden.";
               }
               return;
             }
+            newCodeModal.classList.add("hidden");
             out.textContent =
               "Neuer Code (einmal kopieren): " +
               x.d.code +
@@ -837,6 +958,12 @@
             var logoTabBtn = document.getElementById("tab-btn-logo");
             if (logoTabBtn) logoTabBtn.classList.remove("hidden");
           }
+          if (data.role === "dev") {
+            var newSchoolFormEl = document.getElementById("new-school-form");
+            if (newSchoolFormEl) newSchoolFormEl.classList.remove("hidden");
+          }
+          loadSchoolsDatalist();
+          loadClassesDatalist();
           if (data.role === "teacher") {
             var accountClass = document.querySelector('input[name="class_name"]');
             if (accountClass) {
@@ -850,6 +977,24 @@
               shopClass.readOnly = true;
               shopClass.placeholder = window.__currentClass || "keine Klasse zugewiesen";
             }
+          }
+          var newCodeRoleSelect = document.getElementById("new-code-role");
+          var newCodeClassInput = document.getElementById("new-code-class");
+          if (newCodeRoleSelect) {
+            if (data.role === "teacher") {
+              newCodeRoleSelect.innerHTML = '<option value="user">User</option>';
+            } else if (data.role === "admin") {
+              newCodeRoleSelect.innerHTML =
+                '<option value="user">User</option><option value="teacher">Lehrer</option>';
+            } else if (data.role === "dev") {
+              newCodeRoleSelect.innerHTML =
+                '<option value="user">User</option><option value="teacher">Lehrer</option><option value="admin">Admin</option><option value="tester">Tester</option><option value="dev">Dev</option>';
+            }
+          }
+          if (newCodeClassInput && data.role === "teacher") {
+            newCodeClassInput.value = window.__currentClass;
+            newCodeClassInput.readOnly = true;
+            newCodeClassInput.placeholder = window.__currentClass || "keine Klasse zugewiesen";
           }
           var roleSelect = document.getElementById("account-role");
           if (roleSelect && data.role === "teacher") {
@@ -1415,5 +1560,6 @@
       loadInviteCodeLimits();
     })();
   </script>
+  <script src="/js/footer.js"></script>
 </body>
 </html>
