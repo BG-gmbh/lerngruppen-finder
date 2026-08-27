@@ -217,3 +217,10 @@ def ensure_indexes():
 
     # laden_purchases: Index created_at.
     db.laden_purchases.create_index("created_at", name="idx_laden_purchases_created")
+
+    # quiz_questions: pro (school, class_name, subject) genau eine Frage je order (0-4).
+    db.quiz_questions.create_index(
+        [("school", ASCENDING), ("class_name", ASCENDING), ("subject", ASCENDING), ("order", ASCENDING)],
+        unique=True,
+        name="uq_quiz_questions_scope_order",
+    )

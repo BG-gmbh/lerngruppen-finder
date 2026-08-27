@@ -107,25 +107,8 @@ flutter doctor
 flutter --version
 ```
 
-## Auf einem eigenen Server hosten (ohne Render)
-
-```bash
-sudo apt update
-sudo apt install -y python3 python3-venv python3-pip
-cd lerngruppen-finder
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-# In .env mindestens FLASK_SECRET_KEY und MONGODB_URI setzen; für Laden-E-Mails die SMTP_*-Variablen.
-python3 app.py
-```
-
-- Lokal: `http://127.0.0.1:5000/` → zeigt `flutter_app/docs/index.html`
-- Im WLAN: `http://<SERVER-IP>:5000/` (IP z. B. mit `hostname -I`)
-
-Der Server bindet an `0.0.0.0`, damit andere Geräte zugreifen können. Für die tatsächliche
-Produktivumgebung (Render, Custom Domain, `render.yaml`) siehe [`DEPLOYMENT.md`](DEPLOYMENT.md).
+Für die tatsächliche Produktivumgebung (Render, Custom Domain, `render.yaml`) siehe
+[`DEPLOYMENT.md`](DEPLOYMENT.md).
 
 ## Datenbank
 

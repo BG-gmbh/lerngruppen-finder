@@ -82,28 +82,8 @@
     <div class="modal-card">
       <h2 id="onboarding-title" class="modal-title">Willkommen! 🎉</h2>
 
-      <!-- Schritt 1: Zeugnis hochladen -->
-      <div id="onboarding-step-upload">
-        <p class="field-hint modal-hint">Lad zum Start dein <strong>Zeugnis</strong> als Foto hoch. Daraus lesen wir Name, Klasse, Schule und deine Fach-Stufen aus.</p>
-        <form id="onboarding-upload-form" autocomplete="off">
-          <div class="modal-field">
-            <label for="onboarding-file">Zeugnis (Foto)</label>
-            <input id="onboarding-file" class="modal-input" name="zeugnis" type="file" accept="image/png,image/jpeg,image/webp,image/gif" required>
-            <p class="field-hint modal-hint">png, jpg, jpeg, webp, gif · max. 8 MB.</p>
-          </div>
-          <label class="check-row modal-field">
-            <input type="checkbox" id="onboarding-consent">
-            <span>Ich bin einverstanden, dass das Foto zur automatischen Auslesung an OpenAI (USA) übermittelt wird. Siehe <a href="/datenschutz.html" target="_blank" rel="noopener">Datenschutzerklärung</a>. Das Foto wird dabei nicht dauerhaft gespeichert.</span>
-          </label>
-          <p id="onboarding-upload-error" class="field-hint modal-hint" style="color:#ef476f;display:none;"></p>
-          <button id="onboarding-upload-btn" type="submit" class="btn btn-block">Zeugnis auslesen</button>
-          <button id="onboarding-manual-btn" type="button" class="btn btn-ghost btn-block" style="margin-top:.5rem;">Ohne Zeugnis manuell eintragen</button>
-        </form>
-      </div>
-
-      <!-- Schritt 2: Prüfen & bestätigen -->
-      <div id="onboarding-step-confirm" class="hidden">
-        <p class="field-hint modal-hint">Bitte prüfen und, falls nötig, korrigieren. Dann bestätigen.</p>
+      <div id="onboarding-step-confirm">
+        <p class="field-hint modal-hint">Beantworte kurz ein paar Fragen zu dir, damit wir dich richtig einordnen können.</p>
         <form id="onboarding-confirm-form" autocomplete="off">
           <div class="modal-field">
             <label for="onboarding-name">Name</label>
@@ -119,7 +99,16 @@
           </div>
           <fieldset class="subject-levels subject-levels-plain" id="onboarding-levels"></fieldset>
           <p id="onboarding-confirm-error" class="field-hint modal-hint" style="color:#ef476f;display:none;"></p>
-          <button type="submit" class="btn btn-block">Bestätigen</button>
+          <button type="submit" class="btn btn-block">Weiter</button>
+        </form>
+      </div>
+
+      <div id="onboarding-step-quiz" class="hidden">
+        <p class="field-hint modal-hint">Beantworte pro Fach 5 Fragen, damit wir deine Stufe überprüfen können. Bei zu wenig richtigen Antworten wird die Stufe automatisch angepasst.</p>
+        <form id="onboarding-quiz-form" autocomplete="off">
+          <div id="onboarding-quiz-body"></div>
+          <p id="onboarding-quiz-error" class="field-hint modal-hint" style="color:#ef476f;display:none;"></p>
+          <button type="submit" class="btn btn-block">Auswerten &amp; bestätigen</button>
         </form>
       </div>
     </div>
@@ -328,75 +317,113 @@
     }
 
     function showConfirmStep(extracted) {
-      document.getElementById("onboarding-step-upload").classList.add("hidden");
-      document.getElementById("onboarding-step-confirm").classList.remove("hidden");
       document.getElementById("onboarding-name").value = (extracted && extracted.display_name) || "";
       document.getElementById("onboarding-class").value = (extracted && extracted.class_name) || "";
       document.getElementById("onboarding-school").value = (extracted && extracted.school) || "";
       buildLevelInputs(extracted && extracted.levels);
     }
 
+    function renderQuiz(subjectKeys, questionsBySubject) {
+      var body = document.getElementById("onboarding-quiz-body");
+      body.innerHTML = "";
+      subjectKeys.forEach(function (key) {
+        var label = SUBJECTS.filter(function (p) { return p[0] === key; })[0][1];
+        var section = document.createElement("fieldset");
+        section.className = "subject-levels subject-levels-plain";
+        var legend = document.createElement("legend");
+        legend.textContent = label;
+        section.appendChild(legend);
+        (questionsBySubject[key] || []).forEach(function (item, idx) {
+          var row = document.createElement("div");
+          row.className = "modal-field";
+          var p = document.createElement("p");
+          p.className = "field-hint";
+          p.textContent = item.q;
+          row.appendChild(p);
+          var choiceRow = document.createElement("div");
+          choiceRow.className = "radio-row";
+          item.choices.forEach(function (choice, choiceIdx) {
+            var pill = document.createElement("label");
+            pill.className = "radio-pill";
+            pill.innerHTML = "<input type=\"radio\" name=\"quiz_" + key + "_" + idx +
+              "\" value=\"" + choiceIdx + "\" required><span></span>";
+            pill.querySelector("span").textContent = choice;
+            choiceRow.appendChild(pill);
+          });
+          row.appendChild(choiceRow);
+          section.appendChild(row);
+        });
+        body.appendChild(section);
+      });
+    }
+
+    function collectQuizAnswers(quizForm, subjectKeys, questionsBySubject) {
+      var answers = {};
+      subjectKeys.forEach(function (key) {
+        answers[key] = (questionsBySubject[key] || []).map(function (item, idx) {
+          var sel = quizForm.querySelector("input[name=\"quiz_" + key + "_" + idx + "\"]:checked");
+          return sel ? Number(sel.value) : -1;
+        });
+      });
+      return answers;
+    }
+
     function showOnboarding() {
       var overlay = document.getElementById("onboarding");
       if (!overlay) return;
       overlay.classList.remove("hidden");
-
-      var uploadForm = document.getElementById("onboarding-upload-form");
-      var uploadErr = document.getElementById("onboarding-upload-error");
-      var uploadBtn = document.getElementById("onboarding-upload-btn");
-      var fileInput = document.getElementById("onboarding-file");
-
-      var consentInput = document.getElementById("onboarding-consent");
-
-      uploadForm.addEventListener("submit", function (e) {
-        e.preventDefault();
-        var file = fileInput.files && fileInput.files[0];
-        if (!file) { uploadErr.textContent = "Bitte ein Zeugnis auswählen."; uploadErr.style.display = "block"; return; }
-        if (!consentInput || !consentInput.checked) {
-          uploadErr.textContent = "Bitte der Übermittlung an OpenAI zustimmen, oder unten ohne Zeugnis manuell eintragen.";
-          uploadErr.style.display = "block";
-          return;
-        }
-        uploadErr.style.display = "none";
-        uploadBtn.disabled = true;
-        uploadBtn.textContent = "Wird ausgelesen …";
-        var fd = new FormData();
-        fd.append("zeugnis", file);
-        fd.append("consent", "1");
-        fetch("/api/onboarding/zeugnis", { method: "POST", credentials: "include", body: fd })
-          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
-          .then(function (res) {
-            uploadBtn.disabled = false;
-            uploadBtn.textContent = "Zeugnis auslesen";
-            if (!res.ok) {
-              var msg = res.d && res.d.error === "ai_unavailable"
-                ? "Automatische Auslesung ist gerade nicht verfügbar. Bitte manuell eintragen."
-                : res.d && res.d.error === "too_large" ? "Datei zu groß (max. 8 MB)."
-                : res.d && res.d.error === "bad_type" ? "Dateityp nicht unterstützt."
-                : "Auslesen fehlgeschlagen. Bitte manuell eintragen.";
-              uploadErr.textContent = msg;
-              uploadErr.style.display = "block";
-              // Trotzdem manuell weitermachen lassen.
-              showConfirmStep(null);
-              return;
-            }
-            showConfirmStep(res.d);
-          })
-          .catch(function () {
-            uploadBtn.disabled = false;
-            uploadBtn.textContent = "Zeugnis auslesen";
-            uploadErr.textContent = "Auslesen fehlgeschlagen. Bitte manuell eintragen.";
-            uploadErr.style.display = "block";
-            showConfirmStep(null);
-          });
-      });
-
-      document.getElementById("onboarding-manual-btn").addEventListener("click", function () {
-        showConfirmStep(null);
-      });
+      showConfirmStep(null);
 
       var confirmForm = document.getElementById("onboarding-confirm-form");
       var confirmErr = document.getElementById("onboarding-confirm-error");
+      var quizForm = document.getElementById("onboarding-quiz-form");
+      var quizErr = document.getElementById("onboarding-quiz-error");
+
+      function submitOnboarding(name, klass, school, levels, quizAnswers, errEl, btn) {
+        fetch("/api/onboarding/confirm", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            display_name: name,
+            class_name: klass,
+            school: school,
+            levels: levels,
+            quiz_answers: quizAnswers || {},
+          }),
+        })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+          .then(function (res) {
+            if (!res.ok) {
+              errEl.textContent = res.d && res.d.error === "invalid_class"
+                ? "Bitte eine gültige Klasse eintragen." : "Speichern fehlgeschlagen.";
+              errEl.style.display = "block";
+              if (btn) btn.disabled = false;
+              return;
+            }
+            overlay.classList.add("hidden");
+            if (res.d.notes && res.d.notes.length) {
+              window.alert("Ergebnis der Stufen-Überprüfung:\n\n" + res.d.notes.join("\n"));
+            }
+            if (typeof window.launchConfetti === "function") window.launchConfetti();
+            // Frische Daten laden, damit Fächer/Tabs stimmen.
+            fetch("/api/me", { credentials: "include" })
+              .then(function (r) { return r.json(); })
+              .then(function (d) {
+                if (!d || !d.username) return;
+                document.getElementById("welcome-name").textContent = d.display_name || d.username;
+                setSummary(d);
+              });
+          })
+          .catch(function () {
+            errEl.textContent = "Speichern fehlgeschlagen.";
+            errEl.style.display = "block";
+            if (btn) btn.disabled = false;
+          });
+      }
+
+      var pendingOnboarding = null;
+
       confirmForm.addEventListener("submit", function (e) {
         e.preventDefault();
         var name = (document.getElementById("onboarding-name").value || "").trim();
@@ -409,44 +436,51 @@
           var sel = confirmForm.querySelector("input[name=\"lvl_" + pair[0] + "\"]:checked");
           levels[pair[0]] = sel ? sel.value : "noob";
         });
-        var btn = confirmForm.querySelector("button[type=submit]");
-        if (btn) btn.disabled = true;
-        fetch("/api/onboarding/confirm", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            display_name: name,
-            class_name: klass,
-            school: (document.getElementById("onboarding-school").value || "").trim(),
-            levels: levels,
-          }),
-        })
-          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
-          .then(function (res) {
-            if (!res.ok) {
-              confirmErr.textContent = res.d && res.d.error === "invalid_class"
-                ? "Bitte eine gültige Klasse eintragen." : "Speichern fehlgeschlagen.";
-              confirmErr.style.display = "block";
-              if (btn) btn.disabled = false;
-              return;
-            }
-            overlay.classList.add("hidden");
-            if (typeof window.launchConfetti === "function") window.launchConfetti();
-            // Frische Daten laden, damit Fächer/Tabs stimmen.
-            fetch("/api/me", { credentials: "include" })
-              .then(function (r) { return r.json(); })
-              .then(function (d) {
-                if (!d || !d.username) return;
-                document.getElementById("welcome-name").textContent = d.display_name || d.username;
-                setSummary(d);
-              });
+        var school = (document.getElementById("onboarding-school").value || "").trim();
+        var subjectsToVerify = SUBJECTS
+          .map(function (p) { return p[0]; })
+          .filter(function (key) { return levels[key] !== "noob"; });
+
+        if (!subjectsToVerify.length) {
+          var directBtn = confirmForm.querySelector("button[type=submit]");
+          if (directBtn) directBtn.disabled = true;
+          submitOnboarding(name, klass, school, levels, null, confirmErr, directBtn);
+          return;
+        }
+
+        var loadBtn = confirmForm.querySelector("button[type=submit]");
+        if (loadBtn) loadBtn.disabled = true;
+        fetch("/api/quiz-questions?subjects=" + subjectsToVerify.join(","), { credentials: "include" })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (loadBtn) loadBtn.disabled = false;
+            var questionsBySubject = (data && data.questions) || {};
+            pendingOnboarding = {
+              name: name, klass: klass, school: school, levels: levels,
+              subjects: subjectsToVerify, questions: questionsBySubject,
+            };
+            document.getElementById("onboarding-step-confirm").classList.add("hidden");
+            document.getElementById("onboarding-step-quiz").classList.remove("hidden");
+            renderQuiz(subjectsToVerify, questionsBySubject);
           })
           .catch(function () {
-            confirmErr.textContent = "Speichern fehlgeschlagen.";
+            if (loadBtn) loadBtn.disabled = false;
+            confirmErr.textContent = "Fragen konnten nicht geladen werden. Bitte erneut versuchen.";
             confirmErr.style.display = "block";
-            if (btn) btn.disabled = false;
           });
+      });
+
+      quizForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+        if (!pendingOnboarding) return;
+        quizErr.style.display = "none";
+        var quizAnswers = collectQuizAnswers(quizForm, pendingOnboarding.subjects, pendingOnboarding.questions);
+        var btn = quizForm.querySelector("button[type=submit]");
+        if (btn) btn.disabled = true;
+        submitOnboarding(
+          pendingOnboarding.name, pendingOnboarding.klass, pendingOnboarding.school,
+          pendingOnboarding.levels, quizAnswers, quizErr, btn
+        );
       });
     }
   </script>

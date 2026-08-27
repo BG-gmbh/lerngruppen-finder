@@ -45,6 +45,65 @@ CHAT_LEVEL_COLUMN = {subject: f"level_{subject}" for subject in CHAT_SUBJECT_ORD
 CHAT_VERIFIED_COLUMN = {
     subject: f"pro_verified_{subject}" for subject in CHAT_SUBJECT_ORDER
 }
+
+# Standard-Kontrollfragen fuers Onboarding (5 pro Fach, Ueberpruefung der
+# selbst gewaehlten Stufe). Gilt als globaler Fallback (school="", class_name=""
+# in quiz_questions), solange niemand ein eigenes Set fuer eine Schule/Klasse
+# hinterlegt hat (siehe /api/admin/quiz-questions).
+DEFAULT_QUIZ_QUESTIONS = {
+    "german": [
+        {"q": "Welcher Artikel gehört zu „Tisch“?", "choices": ["der", "die", "das"], "correct": 0},
+        {"q": "Was ist ein Synonym für „schnell“?", "choices": ["langsam", "rasch", "müde"], "correct": 1},
+        {"q": "Wie lautet die Mehrzahl von „Kind“?", "choices": ["Kinder", "Kinden", "Kindes"], "correct": 0},
+        {"q": "Welches Wort ist ein Verb?", "choices": ["Haus", "laufen", "schön"], "correct": 1},
+        {"q": "Wie schreibt man richtig: „Ich weiß, ___ du kommst.“?", "choices": ["das", "dass", "daß"], "correct": 1},
+    ],
+    "math": [
+        {"q": "7 × 8 = ?", "choices": ["54", "56", "64"], "correct": 1},
+        {"q": "Was ist die Hälfte von 100?", "choices": ["40", "50", "60"], "correct": 1},
+        {"q": "12 + 15 = ?", "choices": ["27", "25", "29"], "correct": 0},
+        {"q": "Wie viele Seiten hat ein Dreieck?", "choices": ["2", "3", "4"], "correct": 1},
+        {"q": "Was ist 9²?", "choices": ["18", "81", "72"], "correct": 1},
+    ],
+    "english": [
+        {"q": "What is the English word for „Hund“?", "choices": ["cat", "dog", "bird"], "correct": 1},
+        {"q": "Complete: „She ___ to school every day.“", "choices": ["go", "goes", "going"], "correct": 1},
+        {"q": "What is the past tense of „go“?", "choices": ["goed", "went", "gone"], "correct": 1},
+        {"q": "What is the opposite of „big“?", "choices": ["small", "tall", "long"], "correct": 0},
+        {"q": "How do you say „Danke“ in English?", "choices": ["Please", "Sorry", "Thank you"], "correct": 2},
+    ],
+    "biology": [
+        {"q": "Welches Organ pumpt das Blut durch den Körper?", "choices": ["Lunge", "Herz", "Leber"], "correct": 1},
+        {"q": "Wie viele Beine hat ein Insekt normalerweise?", "choices": ["4", "6", "8"], "correct": 1},
+        {"q": "Was brauchen Pflanzen zur Photosynthese?", "choices": ["Licht", "Dunkelheit", "Salz"], "correct": 0},
+        {"q": "Wie nennt man die kleinste Einheit des Lebens?", "choices": ["Atom", "Zelle", "Molekül"], "correct": 1},
+        {"q": "Welches Gas atmen wir zum Leben ein?", "choices": ["Kohlenstoffdioxid", "Sauerstoff", "Stickstoff"], "correct": 1},
+    ],
+    "pgw": [
+        {"q": "Wie heißt die deutsche Verfassung?", "choices": ["Grundgesetz", "Bundesgesetz", "Staatsgesetz"], "correct": 0},
+        {"q": "Wie oft finden in Deutschland Bundestagswahlen normalerweise statt?", "choices": ["alle 2 Jahre", "alle 4 Jahre", "alle 6 Jahre"], "correct": 1},
+        {"q": "Wie heißt die Regierungschefin/der Regierungschef Deutschlands?", "choices": ["Präsident/in", "Kanzler/in", "König/in"], "correct": 1},
+        {"q": "Was bedeutet „Demokratie“ grob übersetzt?", "choices": ["Herrschaft eines Einzelnen", "Herrschaft des Volkes", "Herrschaft des Geldes"], "correct": 1},
+        {"q": "Wofür steht die Abkürzung EU?", "choices": ["Europäische Union", "Einheitliche Union", "Europäische Universität"], "correct": 0},
+    ],
+    "spanish": [
+        {"q": "Was bedeutet „hola“?", "choices": ["tschüss", "hallo", "danke"], "correct": 1},
+        {"q": "Wie sagt man „eins“ auf Spanisch?", "choices": ["uno", "dos", "tres"], "correct": 0},
+        {"q": "Was bedeutet „gracias“?", "choices": ["bitte", "danke", "entschuldigung"], "correct": 1},
+        {"q": "Wie sagt man „ich bin“ auf Spanisch?", "choices": ["yo soy", "tú eres", "él es"], "correct": 0},
+        {"q": "Was bedeutet „casa“?", "choices": ["Auto", "Haus", "Straße"], "correct": 1},
+    ],
+    "art": [
+        {"q": "Welche drei Farben sind die Grundfarben?", "choices": ["Rot, Grün, Blau", "Rot, Gelb, Blau", "Gelb, Grün, Lila"], "correct": 1},
+        {"q": "Wer malte die „Mona Lisa“?", "choices": ["Picasso", "Da Vinci", "Van Gogh"], "correct": 1},
+        {"q": "Was entsteht, wenn man Blau und Gelb mischt?", "choices": ["Grün", "Lila", "Orange"], "correct": 0},
+        {"q": "Wie nennt man ein Bild von sich selbst?", "choices": ["Landschaft", "Selbstporträt", "Stillleben"], "correct": 1},
+        {"q": "Welches Werkzeug benutzt man typischerweise zum Zeichnen?", "choices": ["Pinsel", "Bleistift", "Meißel"], "correct": 1},
+    ],
+}
+QUIZ_MIN_CORRECT = {"pro": 4, "medium": 2}
+QUIZ_DOWNGRADE = {"pro": "medium", "medium": "noob"}
+
 CHAT_MAX_USERS = 5
 CHAT_BODY_MAX = 500
 CHAT_ROOM_SUFFIX_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
@@ -358,6 +417,44 @@ def _new_user_defaults():
     return defaults
 
 
+def _seed_default_quiz_questions(db):
+    """Legt den globalen Fallback (school="", class_name="") fuer jedes Fach
+    an, falls noch keiner existiert. Idempotent, sicher bei jedem Start."""
+    for subject, items in DEFAULT_QUIZ_QUESTIONS.items():
+        if db.quiz_questions.count_documents({"school": "", "class_name": "", "subject": subject}):
+            continue
+        for order, item in enumerate(items):
+            db.quiz_questions.update_one(
+                {"school": "", "class_name": "", "subject": subject, "order": order},
+                {"$setOnInsert": {
+                    "question": item["q"],
+                    "choices": item["choices"],
+                    "correct": item["correct"],
+                    "updated_at": utcnow(),
+                    "updated_by": None,
+                }},
+                upsert=True,
+            )
+
+
+def _resolve_quiz_questions(db, school, class_name, subject):
+    """5 Fragen fuer (school, class_name, subject), mit Fallback von genau
+    passend -> schulweit (class_name="") -> global ("", "")."""
+    for scope_school, scope_class in (
+        (school, class_name),
+        (school, ""),
+        ("", ""),
+    ):
+        rows = list(
+            db.quiz_questions.find(
+                {"school": scope_school, "class_name": scope_class, "subject": subject}
+            ).sort("order", 1)
+        )
+        if len(rows) == 5:
+            return rows
+    return []
+
+
 def init_db():
     """Legt Indizes an. Ersatz für die frühere SQLite-Schema-/Migrationslogik.
 
@@ -366,6 +463,7 @@ def init_db():
     nicht mehr beim App-Start.
     """
     ensure_indexes()
+    _seed_default_quiz_questions(get_db())
 
 
 def app_setting(db, key, default=""):
@@ -1210,6 +1308,107 @@ def admin_classes_list():
     flt = {"school": school} if school else {}
     classes = sorted({c for c in db.users.distinct("class_name", flt) if c})
     return jsonify(classes=classes)
+
+
+def _quiz_scope_for_session(db, requested_school, requested_class):
+    """Klemmt (school, class_name) auf das, was die aktuelle Sitzung bearbeiten
+    darf: Dev = freie Wahl (inkl. globalem ""/""); Admin = eigene Schule, jede
+    Klasse darin; Lehrkraft = nur die eigene Schule UND eigene Klasse."""
+    if is_dev_session():
+        return requested_school, requested_class
+    school = admin_school(db)
+    if session.get("role") == "teacher":
+        return school, teacher_class_for_session(db)
+    return school, requested_class
+
+
+@app.route("/api/admin/quiz-questions", methods=["GET"])
+@admin_api
+def admin_quiz_questions_get():
+    subject = (request.args.get("subject") or "").strip()
+    if subject not in CHAT_SUBJECTS:
+        return jsonify(error="invalid_subject"), 400
+    db = get_db()
+    school, class_name = _quiz_scope_for_session(
+        db,
+        (request.args.get("school") or "").strip(),
+        normalize_class_name(request.args.get("class_name")) or "",
+    )
+    rows = list(
+        db.quiz_questions.find(
+            {"school": school, "class_name": class_name, "subject": subject}
+        ).sort("order", 1)
+    )
+    questions = [
+        {"question": r["question"], "choices": r["choices"], "correct": r["correct"]}
+        for r in rows
+    ]
+    return jsonify(
+        school=school, class_name=class_name, subject=subject,
+        questions=questions, customized=bool(questions),
+    )
+
+
+@app.route("/api/admin/quiz-questions", methods=["POST"])
+@admin_write_api
+def admin_quiz_questions_save():
+    data = request.get_json(silent=True) or {}
+    subject = (data.get("subject") or "").strip()
+    if subject not in CHAT_SUBJECTS:
+        return jsonify(error="invalid_subject"), 400
+    questions = data.get("questions")
+    if not isinstance(questions, list) or len(questions) != 5:
+        return jsonify(error="invalid_questions"), 400
+    cleaned = []
+    for item in questions:
+        if not isinstance(item, dict):
+            return jsonify(error="invalid_questions"), 400
+        q = (item.get("question") or "").strip()
+        choices = item.get("choices")
+        correct = item.get("correct")
+        if not q or len(q) > 300:
+            return jsonify(error="invalid_questions"), 400
+        if (
+            not isinstance(choices, list) or len(choices) != 3
+            or any(not isinstance(c, str) or not c.strip() or len(c) > 120 for c in choices)
+        ):
+            return jsonify(error="invalid_questions"), 400
+        if correct not in (0, 1, 2):
+            return jsonify(error="invalid_questions"), 400
+        cleaned.append({"question": q, "choices": [c.strip() for c in choices], "correct": correct})
+
+    db = get_db()
+    school, class_name = _quiz_scope_for_session(
+        db,
+        (data.get("school") or "").strip(),
+        normalize_class_name(data.get("class_name")) or "",
+    )
+    for order, item in enumerate(cleaned):
+        db.quiz_questions.update_one(
+            {"school": school, "class_name": class_name, "subject": subject, "order": order},
+            {"$set": {**item, "updated_at": utcnow(), "updated_by": oid(session["user_id"])}},
+            upsert=True,
+        )
+    return jsonify(ok=True, school=school, class_name=class_name)
+
+
+@app.route("/api/admin/quiz-questions", methods=["DELETE"])
+@admin_write_api
+def admin_quiz_questions_delete():
+    data = request.get_json(silent=True) or {}
+    subject = (data.get("subject") or "").strip()
+    if subject not in CHAT_SUBJECTS:
+        return jsonify(error="invalid_subject"), 400
+    db = get_db()
+    school, class_name = _quiz_scope_for_session(
+        db,
+        (data.get("school") or "").strip(),
+        normalize_class_name(data.get("class_name")) or "",
+    )
+    if not school and not class_name:
+        return jsonify(error="forbidden"), 403
+    db.quiz_questions.delete_many({"school": school, "class_name": class_name, "subject": subject})
+    return jsonify(ok=True)
 
 
 @app.route("/api/admin/app-settings", methods=["GET"])
@@ -2495,13 +2694,13 @@ def login():
     if request.method == "GET":
         return redirect("/login.html")
 
-    username = (request.form.get("username") or "").strip()
+    username_input = (request.form.get("username") or "").strip()
     password = request.form.get("password") or ""
 
     db = get_db()
     row = db.users.find_one(
-        {"username": username},
-        {"password_hash": 1, "role": 1, "school": 1, "banned": 1},
+        {"username": {"$regex": "^" + re.escape(username_input) + "$", "$options": "i"}},
+        {"password_hash": 1, "role": 1, "school": 1, "banned": 1, "username": 1},
     )
 
     if row is None or not check_password_hash(row["password_hash"], password):
@@ -2513,7 +2712,7 @@ def login():
 
     session.clear()
     session["user_id"] = str(row["_id"])
-    session["username"] = username
+    session["username"] = row["username"]
     r = row.get("role")
     session["role"] = r if r in ROLES else "user"
     session["school"] = row.get("school") or ""
@@ -2607,12 +2806,12 @@ def _erase_user_account(db, user_id):
 @app.route("/api/login", methods=["POST"])
 def api_login():
     data = request.get_json(silent=True) or request.form
-    username = (data.get("username") or "").strip()
+    username_input = (data.get("username") or "").strip()
     password = data.get("password") or ""
 
     db = get_db()
     row = db.users.find_one(
-        {"username": username},
+        {"username": {"$regex": "^" + re.escape(username_input) + "$", "$options": "i"}},
         {"password_hash": 1, "role": 1, "banned": 1},
     )
     if row is None or not check_password_hash(row["password_hash"], password):
@@ -3116,6 +3315,23 @@ def api_onboarding_zeugnis():
     )
 
 
+@app.route("/api/quiz-questions", methods=["GET"])
+@login_required_api
+def api_quiz_questions():
+    subjects = [s.strip() for s in (request.args.get("subjects") or "").split(",") if s.strip() in CHAT_SUBJECTS]
+    if not subjects:
+        return jsonify(error="invalid_subjects"), 400
+    db = get_db()
+    row = db.users.find_one({"_id": oid(session["user_id"])}, {"school": 1, "class_name": 1})
+    school = (row.get("school") if row else "") or ""
+    class_name = (row.get("class_name") if row else "") or ""
+    out = {}
+    for subject in subjects:
+        rows = _resolve_quiz_questions(db, school, class_name, subject)
+        out[subject] = [{"q": r["question"], "choices": r["choices"]} for r in rows]
+    return jsonify(questions=out)
+
+
 @app.route("/api/onboarding/confirm", methods=["POST"])
 def api_onboarding_confirm():
     if not _load_api_auth_context():
@@ -3137,6 +3353,29 @@ def api_onboarding_confirm():
         levels[subject] = level if level in LEVELS else "noob"
 
     db = get_db()
+    quiz_answers = data.get("quiz_answers") or {}
+    notes = []
+    for subject in CHAT_SUBJECT_ORDER:
+        claimed = levels[subject]
+        min_correct = QUIZ_MIN_CORRECT.get(claimed)
+        if not min_correct:
+            continue
+        answers = quiz_answers.get(subject)
+        if not isinstance(answers, list):
+            continue
+        official = _resolve_quiz_questions(db, school, class_name, subject)
+        if len(official) != 5:
+            continue
+        correct = sum(
+            1 for i, row in enumerate(official)
+            if i < len(answers) and isinstance(answers[i], int) and answers[i] == row["correct"]
+        )
+        if correct < min_correct:
+            downgraded = QUIZ_DOWNGRADE[claimed]
+            notes.append(f"{CHAT_SUBJECT_LABELS[subject]}: {correct}/5 richtig — Stufe von "
+                         f"{claimed} auf {downgraded} angepasst.")
+            levels[subject] = downgraded
+
     update_fields = {CHAT_LEVEL_COLUMN[s]: levels[s] for s in CHAT_SUBJECT_ORDER}
     update_fields.update({
         "display_name": name,
@@ -3149,7 +3388,7 @@ def api_onboarding_confirm():
         {"$set": update_fields},
     )
     session["school"] = school
-    return jsonify(ok=True)
+    return jsonify(ok=True, notes=notes, levels=levels)
 
 
 @app.route("/api/me")

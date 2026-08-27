@@ -34,6 +34,7 @@
       <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="shop">Laden</button>
       <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="teachers">Lehrer (E-Mail)</button>
       <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="schools">Schulen</button>
+      <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="quiz">Quiz-Fragen</button>
       <button type="button" class="tab-btn hidden" id="tab-btn-logo" role="tab" aria-selected="false" data-tab="logo">Logo</button>
     </div>
 
@@ -270,6 +271,153 @@
       <ul id="schools-list" class="code-list"></ul>
     </section>
 
+    <section class="card tab-panel hidden" id="tab-quiz" role="tabpanel">
+      <h2 class="card-title">Onboarding-Quiz-Fragen</h2>
+      <p class="field-hint">Passe die 5 Kontrollfragen pro Fach an, mit denen die selbst gewählte Stufe beim Onboarding überprüft wird — z. B. spezifisch für eine Klasse oder Schule. Ohne eigenes Set gilt die Standardvorgabe.</p>
+      <div class="stack-form">
+        <div class="form-row two">
+          <label>Fach
+            <select id="quiz-subject">
+              <option value="german">Deutsch</option>
+              <option value="math">Mathe</option>
+              <option value="english">Englisch</option>
+              <option value="biology">Biologie</option>
+              <option value="pgw">PGW</option>
+              <option value="spanish">Spanisch</option>
+              <option value="art">Kunst</option>
+            </select>
+          </label>
+          <label>Schule
+            <input id="quiz-school" type="text" maxlength="120" list="schools-datalist" placeholder="leer = global (nur Dev)">
+          </label>
+        </div>
+        <label>Klasse (leer = für die ganze Schule)
+          <input id="quiz-class" type="text" maxlength="20" list="classes-datalist" placeholder="z. B. 8a">
+        </label>
+        <p><button type="button" class="btn btn-secondary" id="quiz-load-btn">Laden</button></p>
+        <p class="muted" id="quiz-status"></p>
+      </div>
+      <form id="quiz-questions-form" class="stack-form admin-write-action">
+        <div id="quiz-questions-body">
+        <fieldset class="subject-levels subject-levels-plain">
+          <legend>Frage 1</legend>
+          <label>Frage
+            <input class="quiz-q-text" data-idx="0" type="text" maxlength="300" required>
+          </label>
+          <label>Antwort A
+            <input class="quiz-q-choice" data-idx="0" data-choice="0" type="text" maxlength="120" required>
+          </label>
+          <label>Antwort B
+            <input class="quiz-q-choice" data-idx="0" data-choice="1" type="text" maxlength="120" required>
+          </label>
+          <label>Antwort C
+            <input class="quiz-q-choice" data-idx="0" data-choice="2" type="text" maxlength="120" required>
+          </label>
+          <label>Richtige Antwort
+            <div class="radio-row">
+              <label class="radio-pill"><input type="radio" name="quiz-q-0-correct" value="0" required><span>A</span></label>
+              <label class="radio-pill"><input type="radio" name="quiz-q-0-correct" value="1"><span>B</span></label>
+              <label class="radio-pill"><input type="radio" name="quiz-q-0-correct" value="2"><span>C</span></label>
+            </div>
+          </label>
+        </fieldset>
+        <fieldset class="subject-levels subject-levels-plain">
+          <legend>Frage 2</legend>
+          <label>Frage
+            <input class="quiz-q-text" data-idx="1" type="text" maxlength="300" required>
+          </label>
+          <label>Antwort A
+            <input class="quiz-q-choice" data-idx="1" data-choice="0" type="text" maxlength="120" required>
+          </label>
+          <label>Antwort B
+            <input class="quiz-q-choice" data-idx="1" data-choice="1" type="text" maxlength="120" required>
+          </label>
+          <label>Antwort C
+            <input class="quiz-q-choice" data-idx="1" data-choice="2" type="text" maxlength="120" required>
+          </label>
+          <label>Richtige Antwort
+            <div class="radio-row">
+              <label class="radio-pill"><input type="radio" name="quiz-q-1-correct" value="0" required><span>A</span></label>
+              <label class="radio-pill"><input type="radio" name="quiz-q-1-correct" value="1"><span>B</span></label>
+              <label class="radio-pill"><input type="radio" name="quiz-q-1-correct" value="2"><span>C</span></label>
+            </div>
+          </label>
+        </fieldset>
+        <fieldset class="subject-levels subject-levels-plain">
+          <legend>Frage 3</legend>
+          <label>Frage
+            <input class="quiz-q-text" data-idx="2" type="text" maxlength="300" required>
+          </label>
+          <label>Antwort A
+            <input class="quiz-q-choice" data-idx="2" data-choice="0" type="text" maxlength="120" required>
+          </label>
+          <label>Antwort B
+            <input class="quiz-q-choice" data-idx="2" data-choice="1" type="text" maxlength="120" required>
+          </label>
+          <label>Antwort C
+            <input class="quiz-q-choice" data-idx="2" data-choice="2" type="text" maxlength="120" required>
+          </label>
+          <label>Richtige Antwort
+            <div class="radio-row">
+              <label class="radio-pill"><input type="radio" name="quiz-q-2-correct" value="0" required><span>A</span></label>
+              <label class="radio-pill"><input type="radio" name="quiz-q-2-correct" value="1"><span>B</span></label>
+              <label class="radio-pill"><input type="radio" name="quiz-q-2-correct" value="2"><span>C</span></label>
+            </div>
+          </label>
+        </fieldset>
+        <fieldset class="subject-levels subject-levels-plain">
+          <legend>Frage 4</legend>
+          <label>Frage
+            <input class="quiz-q-text" data-idx="3" type="text" maxlength="300" required>
+          </label>
+          <label>Antwort A
+            <input class="quiz-q-choice" data-idx="3" data-choice="0" type="text" maxlength="120" required>
+          </label>
+          <label>Antwort B
+            <input class="quiz-q-choice" data-idx="3" data-choice="1" type="text" maxlength="120" required>
+          </label>
+          <label>Antwort C
+            <input class="quiz-q-choice" data-idx="3" data-choice="2" type="text" maxlength="120" required>
+          </label>
+          <label>Richtige Antwort
+            <div class="radio-row">
+              <label class="radio-pill"><input type="radio" name="quiz-q-3-correct" value="0" required><span>A</span></label>
+              <label class="radio-pill"><input type="radio" name="quiz-q-3-correct" value="1"><span>B</span></label>
+              <label class="radio-pill"><input type="radio" name="quiz-q-3-correct" value="2"><span>C</span></label>
+            </div>
+          </label>
+        </fieldset>
+        <fieldset class="subject-levels subject-levels-plain">
+          <legend>Frage 5</legend>
+          <label>Frage
+            <input class="quiz-q-text" data-idx="4" type="text" maxlength="300" required>
+          </label>
+          <label>Antwort A
+            <input class="quiz-q-choice" data-idx="4" data-choice="0" type="text" maxlength="120" required>
+          </label>
+          <label>Antwort B
+            <input class="quiz-q-choice" data-idx="4" data-choice="1" type="text" maxlength="120" required>
+          </label>
+          <label>Antwort C
+            <input class="quiz-q-choice" data-idx="4" data-choice="2" type="text" maxlength="120" required>
+          </label>
+          <label>Richtige Antwort
+            <div class="radio-row">
+              <label class="radio-pill"><input type="radio" name="quiz-q-4-correct" value="0" required><span>A</span></label>
+              <label class="radio-pill"><input type="radio" name="quiz-q-4-correct" value="1"><span>B</span></label>
+              <label class="radio-pill"><input type="radio" name="quiz-q-4-correct" value="2"><span>C</span></label>
+            </div>
+          </label>
+        </fieldset>
+        </div>
+        <p class="muted" id="quiz-save-out" aria-live="polite"></p>
+        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+          <button type="submit" class="btn">Speichern</button>
+          <button type="button" class="btn btn-ghost" id="quiz-reset-btn">Auf Standard zurücksetzen</button>
+        </div>
+      </form>
+    </section>
+
     <section class="card tab-panel hidden" id="tab-logo" role="tabpanel">
       <h2 class="card-title">Schul-Logo</h2>
       <p class="field-hint">Dieses Logo erscheint oben rechts im Header. Leer lassen entfernt es wieder. Als Dev kannst du die Schule frei wählen (leer = für alle Schulen).</p>
@@ -337,6 +485,7 @@
         shop: document.getElementById("tab-shop"),
         teachers: document.getElementById("tab-teachers"),
         schools: document.getElementById("tab-schools"),
+        quiz: document.getElementById("tab-quiz"),
         logo: document.getElementById("tab-logo"),
       };
 
@@ -584,6 +733,127 @@
         });
       }
 
+      function quizQuestionsUrl(params) {
+        var q = new URLSearchParams(params).toString();
+        return "/api/admin/quiz-questions" + (q ? "?" + q : "");
+      }
+
+      function fillQuizForm(questions) {
+        for (var i = 0; i < 5; i++) {
+          var item = questions && questions[i];
+          var textEl = document.querySelector('.quiz-q-text[data-idx="' + i + '"]');
+          if (textEl) textEl.value = item ? item.question : "";
+          [0, 1, 2].forEach(function (c) {
+            var choiceEl = document.querySelector('.quiz-q-choice[data-idx="' + i + '"][data-choice="' + c + '"]');
+            if (choiceEl) choiceEl.value = item ? (item.choices[c] || "") : "";
+          });
+          var correctEl = document.querySelector(
+            'input[name="quiz-q-' + i + '-correct"][value="' + (item ? item.correct : "") + '"]'
+          );
+          document.querySelectorAll('input[name="quiz-q-' + i + '-correct"]').forEach(function (r) {
+            r.checked = false;
+          });
+          if (correctEl) correctEl.checked = true;
+        }
+      }
+
+      function loadQuizQuestions() {
+        var subject = document.getElementById("quiz-subject").value;
+        var school = (document.getElementById("quiz-school").value || "").trim();
+        var klass = (document.getElementById("quiz-class").value || "").trim();
+        var status = document.getElementById("quiz-status");
+        status.textContent = "Wird geladen …";
+        fetch(quizQuestionsUrl({ subject: subject, school: school, class_name: klass }), { credentials: "include" })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (data) {
+            if (!data) { status.textContent = "Laden fehlgeschlagen."; return; }
+            document.getElementById("quiz-school").value = data.school || "";
+            document.getElementById("quiz-class").value = data.class_name || "";
+            if (data.customized) {
+              fillQuizForm(data.questions);
+              status.textContent = "Eigenes Set für „" + (data.school || "global") +
+                (data.class_name ? " · " + data.class_name : "") + "“ — wird verwendet.";
+            } else {
+              fillQuizForm([]);
+              status.textContent = "Kein eigenes Set für diesen Bereich — aktuell gilt die Standardvorgabe " +
+                "(bzw. das nächstübergeordnete Set). Zum Anlegen einfach ausfüllen und speichern.";
+            }
+          });
+      }
+
+      var quizLoadBtn = document.getElementById("quiz-load-btn");
+      if (quizLoadBtn) quizLoadBtn.addEventListener("click", loadQuizQuestions);
+
+      var quizForm = document.getElementById("quiz-questions-form");
+      if (quizForm) {
+        quizForm.addEventListener("submit", function (e) {
+          e.preventDefault();
+          var out = document.getElementById("quiz-save-out");
+          out.textContent = "";
+          var questions = [];
+          for (var i = 0; i < 5; i++) {
+            var textEl = document.querySelector('.quiz-q-text[data-idx="' + i + '"]');
+            var choices = [0, 1, 2].map(function (c) {
+              var el = document.querySelector('.quiz-q-choice[data-idx="' + i + '"][data-choice="' + c + '"]');
+              return el ? el.value.trim() : "";
+            });
+            var correctEl = document.querySelector('input[name="quiz-q-' + i + '-correct"]:checked');
+            questions.push({
+              question: (textEl.value || "").trim(),
+              choices: choices,
+              correct: correctEl ? Number(correctEl.value) : null,
+            });
+          }
+          if (questions.some(function (q) { return !q.question || q.choices.some(function (c) { return !c; }) || q.correct === null; })) {
+            out.textContent = "Bitte alle 5 Fragen, je 3 Antworten und die richtige Antwort ausfüllen.";
+            return;
+          }
+          fetch("/api/admin/quiz-questions", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              subject: document.getElementById("quiz-subject").value,
+              school: (document.getElementById("quiz-school").value || "").trim(),
+              class_name: (document.getElementById("quiz-class").value || "").trim(),
+              questions: questions,
+            }),
+          })
+            .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+            .then(function (x) {
+              out.textContent = x.ok ? "Gespeichert." : "Speichern fehlgeschlagen.";
+              if (x.ok) loadQuizQuestions();
+            });
+        });
+      }
+
+      var quizResetBtn = document.getElementById("quiz-reset-btn");
+      if (quizResetBtn) {
+        quizResetBtn.addEventListener("click", function () {
+          if (!window.confirm("Eigenes Set für diesen Bereich löschen und auf die übergeordnete Vorgabe zurücksetzen?")) return;
+          fetch("/api/admin/quiz-questions", {
+            method: "DELETE",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              subject: document.getElementById("quiz-subject").value,
+              school: (document.getElementById("quiz-school").value || "").trim(),
+              class_name: (document.getElementById("quiz-class").value || "").trim(),
+            }),
+          })
+            .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+            .then(function (x) {
+              var out = document.getElementById("quiz-save-out");
+              out.textContent = x.ok ? "Zurückgesetzt." : (x.d && x.d.error === "forbidden"
+                ? "Die globale Standardvorgabe kann nicht gelöscht werden, nur überschrieben."
+                : "Zurücksetzen fehlgeschlagen.");
+              if (x.ok) loadQuizQuestions();
+            });
+        });
+      }
+
+      document.getElementById("quiz-subject").addEventListener("change", loadQuizQuestions);
+
       buttons.forEach(function (btn) {
         btn.addEventListener("click", function () {
           var key = btn.getAttribute("data-tab");
@@ -618,6 +888,9 @@
           }
           if (key === "schools") {
             loadSchools();
+          }
+          if (key === "quiz") {
+            loadQuizQuestions();
           }
         });
       });
@@ -949,6 +1222,7 @@
           document.getElementById("nav-username").textContent = data.username;
           window.__currentRole = data.role || "user";
           window.__currentClass = data.class_name || "";
+          window.__currentSchool = data.school || "";
           if (data.role === "tester") {
             document.body.classList.add("role-readonly");
             var usersTabBtn = document.querySelector('[data-tab="users"]');
@@ -964,6 +1238,16 @@
           }
           loadSchoolsDatalist();
           loadClassesDatalist();
+          var quizSchoolInput = document.getElementById("quiz-school");
+          var quizClassInput = document.getElementById("quiz-class");
+          if (data.role !== "dev" && quizSchoolInput) {
+            quizSchoolInput.value = window.__currentSchool;
+            quizSchoolInput.readOnly = true;
+          }
+          if (data.role === "teacher" && quizClassInput) {
+            quizClassInput.value = window.__currentClass;
+            quizClassInput.readOnly = true;
+          }
           if (data.role === "teacher") {
             var accountClass = document.querySelector('input[name="class_name"]');
             if (accountClass) {
