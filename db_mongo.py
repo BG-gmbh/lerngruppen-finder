@@ -26,6 +26,7 @@ Verbindung/Datenbank kommen aus der Umgebung:
 import logging
 import os
 import time
+from urllib.parse import urlparse
 
 from pymongo import ASCENDING
 from pymongo.errors import DuplicateKeyError  # noqa: F401  (re-export für app.py)
@@ -62,11 +63,20 @@ def _make_mongo_client(uri):
 
         # tz_aware: Datetimes kommen als timezone-aware (UTC) zurück, passend zu
         # datetime.now(timezone.utc), das wir beim Schreiben verwenden.
-        client = MongoClient(
-            uri,
-            tz_aware=True,
-            serverSelectionTimeoutMS=_MONGO_TIMEOUT_MS,
+        parsed_uri = urlparse(uri)
+        local_insecure = (
+            parsed_uri.scheme == "mongodb"
+            and (parsed_uri.hostname or "").lower() in {"localhost", "127.0.0.1"}
+            and os.environ.get("MONGODB_ALLOW_INSECURE_LOCAL", "").lower()
+            in {"1", "true", "yes"}
         )
+        client_options = {
+            "tz_aware": True,
+            "serverSelectionTimeoutMS": _MONGO_TIMEOUT_MS,
+        }
+        if not local_insecure:
+            client_options["tls"] = True
+        client = MongoClient(uri, **client_options)
         # Erzwingt eine echte Verbindung: schlägt fehl, wenn Atlas nicht
         # erreichbar / URI falsch ist -> wir fallen auf den lokalen Store zurück.
         client.admin.command("ping")
@@ -97,6 +107,10 @@ def get_client():
             _client, _backend = client, "mongodb"
             log.info("Datenbank-Backend: MongoDB (Atlas).")
         else:
+            if os.environ.get("MONGODB_REQUIRED", "").lower() in {"1", "true", "yes"}:
+                raise RuntimeError(
+                    "MONGODB_URI ist erforderlich, aber MongoDB konnte nicht verbunden werden."
+                )
             _client, _backend = _make_local_client(), "local"
             _last_retry_at = time.monotonic()
             log.info(

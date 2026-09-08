@@ -3508,6 +3508,8 @@ with app.app_context():
         app.logger.info("Datenbank-Backend beim Start: %s", active_backend())
         init_db()
     except Exception as exc:  # pragma: no cover - nur Startup-Robustheit
+        if os.environ.get("MONGODB_REQUIRED", "").lower() in ("1", "true", "yes"):
+            raise
         app.logger.warning("init_db/ensure_indexes beim Start uebersprungen: %s", exc)
 
 

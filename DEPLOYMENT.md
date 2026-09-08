@@ -25,6 +25,8 @@ runs with no persistent disk.
 3. **Network Access** → allow `0.0.0.0/0` (Render egress IPs vary; use a strong
    password), or add Render's static outbound IPs if you pin them.
 4. **Connect → Drivers → Python** → copy the URI (`mongodb+srv://…`).
+  The application enforces TLS for non-local MongoDB connections; do not use
+  an unencrypted `mongodb://` URI in Render.
 5. One-time data import from the old SQLite DB:
    ```bash
    MONGODB_URI="mongodb+srv://…" MONGODB_DB=grouply \
@@ -42,6 +44,7 @@ Render builds the existing `Dockerfile` (gunicorn on `$PORT`). Config is in
 
 Environment variables (Render → service → Environment):
 - `MONGODB_URI` — the Atlas connection string  ⚠️ required
+- `MONGODB_REQUIRED=1` — prevents the insecure in-memory fallback in production
 - `MONGODB_DB` — `grouply` (already defaulted in render.yaml)
 - `FLASK_SECRET_KEY` — Render can generate it (render.yaml `generateValue`)
 - `SESSION_COOKIE_SECURE=1` — Secure cookies over HTTPS (already in render.yaml)

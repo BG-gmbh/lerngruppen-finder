@@ -17,13 +17,15 @@ services:
       - key: PORT
         value: "8080"
 
-      # --- MongoDB Atlas (optional) ---
+      # --- MongoDB Atlas (erforderlich) ---
       # MONGODB_URI wird im Render-Dashboard gesetzt (sync: false -> nicht im
-      # Repo). Ist es gesetzt und erreichbar -> MongoDB; sonst lokaler Fallback.
+      # Repo). Der Dienst startet nicht mit einem fluechtigen lokalen Fallback.
       - key: MONGODB_URI
         sync: false
       - key: MONGODB_DB
         value: grouply
+      - key: MONGODB_REQUIRED
+        value: "1"
 
       # --- Flask / Session ---
       # Einmalig generierter Secret Key (bleibt ueber Deploys stabil).

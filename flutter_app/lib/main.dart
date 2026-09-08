@@ -19,13 +19,26 @@ String _defaultApiBaseUrl() {
   if (kIsWeb) {
     return Uri.base.origin;
   }
-  return 'http://127.0.0.1:5000';
+  return 'https://group-ly.tech';
+}
+
+void _validateApiBaseUrl(String value) {
+  final uri = Uri.tryParse(value);
+  final isLocal = uri?.host == 'localhost' ||
+      uri?.host == '127.0.0.1' ||
+      uri?.host == '10.0.2.2';
+  if (uri == null || uri.host.isEmpty || (uri.scheme != 'https' && !isLocal)) {
+    throw StateError(
+      'API_BASE_URL muss HTTPS verwenden. HTTP ist nur für lokale Entwicklung erlaubt.',
+    );
+  }
 }
 
 final apiBaseUrl = _defaultApiBaseUrl();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  _validateApiBaseUrl(apiBaseUrl);
   await appLanguage.load();
   runApp(const LernApp());
 }

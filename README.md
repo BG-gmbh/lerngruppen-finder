@@ -74,6 +74,7 @@ Dann Flutter starten:
 ```bash
 cd lerngruppen-finder/flutter_app
 flutter pub get
+# Nur lokale Entwicklung: HTTP wird fuer lokale Hosts akzeptiert.
 flutter run -d chrome --dart-define=API_BASE_URL=http://127.0.0.1:5000
 ```
 
@@ -82,6 +83,7 @@ Android-Emulator:
 ```bash
 cd lerngruppen-finder/flutter_app
 flutter pub get
+# Nur lokaler Android-Emulator.
 flutter run --dart-define=API_BASE_URL=http://10.0.2.2:5000
 ```
 
@@ -90,7 +92,8 @@ Echtes Handy im gleichen WLAN:
 ```bash
 cd lerngruppen-finder/flutter_app
 flutter pub get
-flutter run --dart-define=API_BASE_URL=http://<SERVER-IP>:5000
+# Fuer ein echtes Geraet nur mit einer HTTPS-Adresse starten:
+flutter run --dart-define=API_BASE_URL=https://group-ly.tech
 ```
 
 Native Plattformordner ergänzen, falls Flutter sie braucht:
