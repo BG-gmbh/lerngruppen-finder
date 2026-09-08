@@ -596,8 +596,19 @@ def _delete_chat_room_if_empty(db, subject):
         db.chat_message_reports.delete_many({"subject": subject})
 
 
+def _user_role_for_chat(db, user_id):
+    row = db.users.find_one({"_id": oid(user_id)}, {"role": 1})
+    if row is None:
+        return "user"
+    role = row.get("role")
+    return role if role in ROLES else "user"
+
+
 def _chat_may_use_room(db, user_id, subject):
-    """Lesen/Schreiben: Pro im Fach oder mindestens ein Pro im Raum."""
+    """Lesen/Schreiben: Pro im Fach, Staff-Rolle oder mindestens ein Pro im Raum."""
+    role = _user_role_for_chat(db, user_id)
+    if role in ("teacher", "admin", "dev"):
+        return True
     if _user_level_for_subject(db, user_id, subject) == "pro":
         return True
     return _chat_presence_pro_count(db, subject) >= 1
@@ -2127,7 +2138,8 @@ def chat_rooms():
             )
         )
         viewer_lv = _user_level_for_subject(db, uid, base_subject)
-        if viewer_lv == "pro":
+        viewer_role = _user_role_for_chat(db, uid)
+        if viewer_lv == "pro" or viewer_role in ("teacher", "admin", "dev"):
             creatable.append({"subject": base_subject, "label": CHAT_SUBJECT_LABELS[base_subject]})
         for room_key in room_keys:
             verified_col = CHAT_VERIFIED_COLUMN[base_subject]
@@ -2171,7 +2183,7 @@ def chat_rooms():
                 continue
             has_pro = pro_n >= 1
             locked = bool(appointment_row and appointment_row.get("started") and not you_in)
-            if viewer_lv == "pro":
+            if viewer_lv == "pro" or viewer_role in ("teacher", "admin", "dev"):
                 can_join = not locked
                 join_block = "started" if locked else None
                 full = False
@@ -2454,6 +2466,7 @@ def chat_join():
         return jsonify(error="invalid_subject"), 400
     uname = session["username"]
     lvl = _user_level_for_subject(db, uid, subject)
+    role = _user_role_for_chat(db, uid)
 
     row = db.chat_presence.find_one(
         {"subject": subject, "user_id": oid(uid)}, {"_id": 1}
@@ -2471,7 +2484,7 @@ def chat_join():
     if appointment_row and appointment_row.get("started"):
         return jsonify(error="room_closed"), 403
 
-    if lvl != "pro":
+    if role not in ("teacher", "admin", "dev") and lvl != "pro":
         if _chat_presence_pro_count(db, subject) < 1:
             return jsonify(error="need_pro"), 403
         if _chat_presence_non_pro_count(db, subject) >= CHAT_MAX_USERS:

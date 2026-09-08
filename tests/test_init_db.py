@@ -5,6 +5,8 @@ noch MongoDB-Indizes an (ensure_indexes()). Diese Tests pruefen die reinen
 Hilfsfunktionen der neuen Datenschicht ohne laufende Datenbank.
 """
 
+from types import SimpleNamespace
+
 import app as app_module
 from db_mongo import oid
 from bson import ObjectId
@@ -33,3 +35,24 @@ def test_oid_parses_valid_and_rejects_invalid():
     assert oid("not-an-objectid") is None
     assert oid("") is None
     assert oid(None) is None
+
+
+def test_admin_and_dev_can_use_chat_room_without_pro():
+    user_id = ObjectId()
+
+    class Users:
+        def __init__(self, role):
+            self.role = role
+
+        def find_one(self, query, fields=None):
+            return {"_id": user_id, "role": self.role, "level_math": "noob"}
+
+    class Presence:
+        def count_documents(self, query):
+            return 0
+
+    fake_db = SimpleNamespace(users=Users("admin"), chat_presence=Presence())
+    assert app_module._chat_may_use_room(fake_db, str(user_id), "math") is True
+
+    fake_db.users = Users("dev")
+    assert app_module._chat_may_use_room(fake_db, str(user_id), "math") is True
