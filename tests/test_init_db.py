@@ -6,6 +6,7 @@ Hilfsfunktionen der neuen Datenschicht ohne laufende Datenbank.
 """
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import app as app_module
 from db_mongo import oid
@@ -56,3 +57,30 @@ def test_admin_and_dev_can_use_chat_room_without_pro():
 
     fake_db.users = Users("dev")
     assert app_module._chat_may_use_room(fake_db, str(user_id), "math") is True
+
+
+def test_admin_can_join_closed_room():
+    uid = str(ObjectId())
+    fake_db = SimpleNamespace(
+        chat_appointments=SimpleNamespace(find_one=lambda *args, **kwargs: {"started": 1}),
+        chat_presence=SimpleNamespace(
+            find_one=lambda *args, **kwargs: None,
+            insert_one=lambda *args, **kwargs: None,
+            update_one=lambda *args, **kwargs: None,
+        ),
+    )
+
+    with app_module.app.test_request_context("/api/chat/join", method="POST", json={"subject": "math"}):
+        app_module.session.clear()
+        app_module.session["user_id"] = uid
+        app_module.session["username"] = "admin-user"
+        app_module.session["role"] = "admin"
+
+        with patch.object(app_module, "get_db", return_value=fake_db), \
+             patch.object(app_module, "user_may_access_subject", return_value=True), \
+             patch.object(app_module, "_user_level_for_subject", return_value="noob"), \
+             patch.object(app_module, "_user_role_for_chat", return_value="admin"):
+            response = app_module.chat_join.__wrapped__()
+
+    assert response.status_code == 200
+    assert response.get_json()["ok"] is True

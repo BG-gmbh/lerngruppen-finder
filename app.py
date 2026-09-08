@@ -2481,7 +2481,7 @@ def chat_join():
     appointment_row = db.chat_appointments.find_one(
         {"_id": subject}, {"started": 1}
     )
-    if appointment_row and appointment_row.get("started"):
+    if appointment_row and appointment_row.get("started") and role not in ("teacher", "admin", "dev"):
         return jsonify(error="room_closed"), 403
 
     if role not in ("teacher", "admin", "dev") and lvl != "pro":
