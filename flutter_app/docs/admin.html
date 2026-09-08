@@ -133,6 +133,10 @@
     <section class="card tab-panel hidden" id="tab-chats" role="tabpanel">
       <h2 class="card-title">Chats verwalten</h2>
       <p class="field-hint">Nachrichten, Termine und Bewertungen eines Raums werden automatisch gelöscht, sobald der letzte Nutzer den Chat verlässt (gespeicherte <strong>Admin-Punkte</strong> pro Nutzer/Fach bleiben erhalten). Übersicht:</p>
+      <div class="admin-shop-toolbar">
+        <button type="button" class="btn btn-danger" id="btn-clear-chat-deutsch">Deutsch-Chat löschen</button>
+        <button type="button" class="btn btn-danger" id="btn-clear-all-chats">Alle Chats löschen</button>
+      </div>
       <ul id="chat-admin-list" class="code-list"></ul>
 
       <h3 class="subsection-title">Gemeldete Nachrichten</h3>
@@ -1405,6 +1409,29 @@
         wrap.appendChild(table);
       }
 
+      function clearChat(subject) {
+        var label = subject ? (subject === "german" ? "Deutsch-Chat" : subject) : "alle Chats";
+        if (!confirm("Chatdaten für " + label + " wirklich löschen?")) return;
+        fetch("/api/admin/chat-clear", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(subject ? { subject: subject } : {}),
+        })
+          .then(function (r) {
+            return r.json().then(function (d) {
+              return { ok: r.ok, d: d };
+            });
+          })
+          .then(function (x) {
+            if (!x.ok) {
+              window.alert("Chat konnte nicht gelöscht werden.");
+              return;
+            }
+            loadChats();
+          });
+      }
+
       function loadChats() {
         fetch("/api/admin/chats", { credentials: "include" })
           .then(function (r) {
@@ -1448,6 +1475,13 @@
             if (ratingData) renderAdminRatings(ratingData);
           });
       }
+
+      document.getElementById("btn-clear-chat-deutsch").addEventListener("click", function () {
+        clearChat("german");
+      });
+      document.getElementById("btn-clear-all-chats").addEventListener("click", function () {
+        clearChat(null);
+      });
 
       function loadChatReports() {
         fetch("/api/admin/chat-reports", { credentials: "include" })

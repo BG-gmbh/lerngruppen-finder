@@ -84,3 +84,27 @@ def test_admin_can_join_closed_room():
 
     assert response.status_code == 200
     assert response.get_json()["ok"] is True
+
+
+def test_delete_chat_subject_data_clears_matching_subjects():
+    deleted = {}
+
+    class FakeCollection:
+        def delete_many(self, filt):
+            deleted.setdefault(self.name, []).append(filt)
+            return SimpleNamespace(deleted_count=1)
+
+    db = SimpleNamespace(
+        chat_presence=FakeCollection(),
+        chat_messages=FakeCollection(),
+        chat_appointments=FakeCollection(),
+        chat_ratings=FakeCollection(),
+        chat_message_reports=FakeCollection(),
+    )
+    for collection in (db.chat_presence, db.chat_messages, db.chat_appointments,
+                       db.chat_ratings, db.chat_message_reports):
+        collection.name = collection.__class__.__name__
+
+    app_module.delete_chat_subject_data(db, "german")
+
+    assert any("german" in str(filt) for filt in deleted.get("FakeCollection", []))

@@ -596,6 +596,22 @@ def _delete_chat_room_if_empty(db, subject):
         db.chat_message_reports.delete_many({"subject": subject})
 
 
+def delete_chat_subject_data(db, subject=None):
+    """Löscht alle Chat-Daten eines Fachs oder für alle Fächer."""
+    if subject is None:
+        subject_filter = {}
+        room_filter = {}
+    else:
+        subject_filter = {"subject": subject}
+        room_filter = {"_id": {"$regex": f"^{re.escape(subject)}(:|$)"}}
+
+    db.chat_presence.delete_many(subject_filter)
+    db.chat_messages.delete_many(subject_filter)
+    db.chat_appointments.delete_many(room_filter)
+    db.chat_ratings.delete_many(subject_filter)
+    db.chat_message_reports.delete_many(subject_filter)
+
+
 def _user_role_for_chat(db, user_id):
     row = db.users.find_one({"_id": oid(user_id)}, {"role": 1})
     if row is None:
@@ -1560,6 +1576,18 @@ def admin_delete_message(message_id):
         return jsonify(error="message_not_found"), 404
     db.chat_messages.delete_one({"_id": message_id})
     return jsonify(success=True)
+
+
+@app.route("/api/admin/chat-clear", methods=["POST"])
+@admin_write_api
+def admin_clear_chat():
+    data = request.get_json(silent=True) or {}
+    subject = (data.get("subject") or "").strip().lower()
+    if subject and subject not in CHAT_SUBJECTS:
+        return jsonify(error="invalid_subject"), 400
+    db = get_db()
+    delete_chat_subject_data(db, subject if subject else None)
+    return jsonify(ok=True, subject=subject or "all")
 
 
 @app.route("/api/admin/chat-reports", methods=["GET"])
